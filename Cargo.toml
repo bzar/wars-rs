@@ -1,0 +1,17 @@
+[package]
+name = "wars"
+version = "0.1.0"
+authors = ["Teemu Erkkola <teemu.erkkola@iki.fi>"]
+
+[dependencies]
+serde = "1.0.13"
+serde_json = "1.0.13"
+serde_derive = "1.0.13"
+
+[[bin]]
+name = "print_map"
+path = "src/bins/print_map.rs"
+
+[[bin]]
+name = "print_units"
+path = "src/bins/print_units.rs"
