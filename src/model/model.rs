@@ -26,7 +26,7 @@ pub fn weapon(x: Weapon) -> WeaponData<'static> {
         HeavyMachinegun => "HeavyMachinegun"
     };
 
-    let power_map: Box<Fn(Armor) -> Option<u32>> = {
+    let power_map: Box<dyn Fn(Armor) -> Option<u32>> = {
         use model::Armor::*;
 
         match x {
@@ -129,7 +129,7 @@ pub fn weapon(x: Weapon) -> WeaponData<'static> {
         }
     };
 
-    let range_map: Box<Fn(u32) -> Option<u32>> = match x {
+    let range_map: Box<dyn Fn(u32) -> Option<u32>> = match x {
         LightCannon | MediumCannon | HeavyCannon => Box::new(|r| match r {
             1 => Some(100), 2 => Some(50), _ => None
         }),
@@ -193,7 +193,7 @@ pub fn movement(x: Movement) -> MovementData<'static> {
     };
 
 
-    let terrain_cost_map: Box<Fn(Terrain) -> Option<u32>> = match x {
+    let terrain_cost_map: Box<dyn Fn(Terrain) -> Option<u32>> = match x {
         Walk => Box::new(|t| match t {
             Mountains => Some(2),
             Water => Some(3),
@@ -324,7 +324,7 @@ pub fn unit_type(x: UnitType) -> UnitTypeData<'static> {
         AABoat => Armor::LightShip,
         Cruiser => Armor::HeavyShip
     };
-    let defense_map: Box<Fn(Terrain) -> Option<u32>> = match x {
+    let defense_map: Box<dyn Fn(Terrain) -> Option<u32>> = match x {
         Infantry | ATInfantry => Box::new(|t| match t {
             Terrain::Plains => Some(10),
             Terrain::Forest

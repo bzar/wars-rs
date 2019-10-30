@@ -53,8 +53,8 @@ pub enum TerrainFlag {
 
 pub struct WeaponData<'a> {
     pub name: &'a str,
-    pub power_map: Box<Fn(Armor) -> Option<u32>>,
-    pub range_map: Box<Fn(u32) -> Option<u32>>,
+    pub power_map: Box<dyn Fn(Armor) -> Option<u32>>,
+    pub range_map: Box<dyn Fn(u32) -> Option<u32>>,
     pub require_deployed: bool
 }
 
@@ -63,7 +63,7 @@ pub struct ArmorData<'a> {
 }
 pub struct MovementData<'a> {
     pub name: &'a str,
-    pub terrain_cost_map: Box<Fn(Terrain) -> Option<u32>>,
+    pub terrain_cost_map: Box<dyn Fn(Terrain) -> Option<u32>>,
 }
 pub struct TerrainFlagData<'a> {
     pub name: &'a str
@@ -78,7 +78,7 @@ pub struct UnitTypeData<'a> {
     pub movement_type: Movement,
     pub movement: u32,
     pub armor_type: Armor,
-    pub defense_map: Box<Fn(Terrain) -> Option<u32>>,
+    pub defense_map: Box<dyn Fn(Terrain) -> Option<u32>>,
     pub weapons: &'a [Weapon],
     pub price: u32,
     pub carry_classes: &'a [UnitClass],

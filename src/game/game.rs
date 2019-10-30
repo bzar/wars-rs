@@ -109,9 +109,9 @@ impl Game {
 
             fn to_char(x: u32) -> char {
                 match x {
-                    0...9 => ('0' as u8 + x as u8) as char,
-                    10...35 => ('a' as u8 + x as u8) as char,
-                    36...61 => ('A' as u8 + x as u8) as char,
+                    0..=9 => ('0' as u8 + x as u8) as char,
+                    10..=35 => ('a' as u8 + x as u8) as char,
+                    36..=61 => ('A' as u8 + x as u8) as char,
                     _ => '?'
                 }
             }
