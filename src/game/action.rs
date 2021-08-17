@@ -49,7 +49,7 @@ mod test {
 
         let mut events = Vec::new();
         let path: Vec<_> = [(0,13), (1,12), (1, 11), (2, 10)]
-            .into_iter().map(|&(x, y)| Position(x, y)).collect();
+            .iter().map(|&(x, y)| Position(x, y)).collect();
         let result = move_and_wait(&mut game, 219, &path, |e| {
             events.push(e);
         });
