@@ -1,4 +1,4 @@
-use game::*;
+use crate::game::*;
 
 pub fn start(game: &mut Game) -> ActionResult<()> {
     match game.state {
@@ -38,7 +38,7 @@ pub fn move_and_wait<F>(game: &mut Game, unit_id: UnitId, path: &[Position], mut
 
 #[cfg(test)]
 mod test {
-    use game::*;
+    use crate::game::*;
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
 
     #[test]

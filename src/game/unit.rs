@@ -1,4 +1,4 @@
-use ::game::*;
+use crate::game::*;
 
 impl Default for Unit {
     fn default() -> Unit {

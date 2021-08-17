@@ -1,5 +1,5 @@
-use ::game::*;
-use ::util::*;
+use crate::game::*;
+use crate::util::*;
 use std::collections::hash_map;
 
 impl Position {
@@ -234,7 +234,7 @@ impl Game {
 
 #[cfg(test)]
 mod test {
-    use ::game::*;
+    use crate::game::*;
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
 
     #[test]

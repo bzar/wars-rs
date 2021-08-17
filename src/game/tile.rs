@@ -1,8 +1,8 @@
-use game::Tile;
+use crate::game::Tile;
 
 impl Default for Tile {
     fn default() -> Tile {
-        use model;
+        use crate::model;
         Tile {
             terrain: model::Terrain::Road,
             terrain_subtype_id: 0,

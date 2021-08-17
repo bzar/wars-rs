@@ -1,5 +1,5 @@
-use ::game::*;
-use util::*;
+use crate::game::*;
+use crate::util::*;
 use serde_json;
 
 impl Map {
@@ -95,7 +95,7 @@ impl JsonMap {
 }
 #[cfg(test)]
 mod test {
-    use ::game::*;
+    use crate::game::*;
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
 
     #[test]

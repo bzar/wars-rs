@@ -1,4 +1,4 @@
-use ::model::*;
+use crate::model::*;
 
 pub const MAX_CAPTURE_POINTS: u32 = 200;
 pub const CAPTURE_POINT_REGEN_RATE: u32 = 50;
@@ -480,7 +480,7 @@ pub fn terrain(x: Terrain) -> TerrainData<'static> {
 
 #[cfg(test)]
 mod test {
-    use model::*;
+    use crate::model::*;
 
     #[test]
     fn generate_wars_configuration() {

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use model;
-use auth;
+use crate::model;
+use crate::auth;
 
 mod game;
 mod unit;

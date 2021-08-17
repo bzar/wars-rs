@@ -10,7 +10,7 @@ mod util;
 
 #[cfg(test)]
 mod test {
-    use game;
+    use crate::game;
     //use auth;
     //use model;
 
