@@ -1,4 +1,5 @@
-use crate::game::Tile;
+use crate::game::{Tile, Unit, Health, Credits};
+use crate::model::*;
 
 impl Default for Tile {
     fn default() -> Tile {
@@ -15,4 +16,31 @@ impl Default for Tile {
     }
 }
 
+impl Tile {
+    pub fn has_terrain_flag(&self, flag: TerrainFlag) -> bool {
+        terrain(self.terrain).flags.contains(&flag)
+    }
+    pub fn can_repair_unit_class(&self, unit_class: UnitClass) -> bool {
+        terrain(self.terrain).repair_classes.contains(&unit_class)
+    }
+    pub fn can_repair_unit(&self, unit: &Unit) -> bool {
+        self.can_repair_unit_class(unit.unit_type_data().unit_class)
+    }
 
+    pub fn terrain_data(&self) -> TerrainData {
+        terrain(self.terrain)
+    }
+    pub fn repair_rate(&self) -> Health {
+        UNIT_MAX_REPAIR_RATE * self.capture_points / MAX_CAPTURE_POINTS
+    }
+    pub fn generated_funds(&self) -> Credits {
+        if self.has_terrain_flag(TerrainFlag::Funds) {
+            FUNDS_PER_PROPERTY * self.capture_points / MAX_CAPTURE_POINTS
+        } else {
+            0
+        }
+    }
+    pub fn is_capturable(&self) -> bool {
+        self.has_terrain_flag(TerrainFlag::Capturable)
+    }
+}

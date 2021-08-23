@@ -1,51 +1,241 @@
 use crate::game::*;
+use crate::model::*;
 
-pub fn start(game: &mut Game) -> ActionResult<()> {
-    match game.state {
-        GameState::Pregame => {
-            game.state = GameState::InProgress;
-            Ok(())
-        },
-        _ => Err(ActionError::GameAlreadyStarted)
-    }
+pub fn start<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+    game.set_state(GameState::InProgress).map_err(|_| ActionError::GameAlreadyStarted)?;
+    let in_turn_number = game.in_turn_number().ok_or(ActionError::InternalError)?;
+    start_turn(game, in_turn_number, &mut emit)?;
+    Ok(())
 }
 
-pub fn move_and_wait<F>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<usize> 
-    where F: FnMut(Event) {
-    let mut unit = game.units.get(unit_id)?;
+
+fn start_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, emit: &mut F) -> ActionResult<()> {
+    emit(Event::StartTurn(player_number));
+
+    let mut player = game.get_player(player_number).ok_or(ActionError::InternalError)?;
+
+    // Generate player funds
+    let generated_funds = game.tiles.owned_by_player(player_number)
+            .map(|(_, tile)| tile.generated_funds())
+            .sum();
+
+    player.funds += generated_funds;
+    game.players.update(player);
+    emit(Event::Funds(player_number, generated_funds));
+
+    // Reset unit capture statuses
+    game.units.owned_by_player(player_number)
+        .filter(|(_, unit)| unit.capturing)
+        .map(|(unit_id, unit)| (unit_id, Unit { capturing: false, ..unit.clone() }))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(unit_id, unit)| {
+            game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError)
+        })?;
+
+    // Regenerate capture points
+    game.tiles.owned_by_player(player_number)
+        .filter(|(_, tile)| tile.capture_points < MAX_CAPTURE_POINTS)
+        .filter_map(|(tile_id, tile)| Some((tile_id, tile, game.units.get(tile.unit?)?)))
+        .filter(|(_, _, unit)| !unit.capturing)
+        .map(|(tile_id, tile, _)| {
+            let new_tile_capture_points = (tile.capture_points + CAPTURE_POINT_REGEN_RATE).min(MAX_CAPTURE_POINTS);
+            (tile_id, Tile { capture_points: new_tile_capture_points, ..tile.clone() })
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(tile_id, tile)| {
+            emit(Event::TileCapturePointRegen(tile_id, tile.capture_points));
+            game.tiles.update(tile_id, tile).map_err(|_| ActionError::InternalError)
+        })?;
+    
+    // Repair units
+    game.tiles.owned_by_player(player_number)
+        .filter_map(|(_, tile)| tile.unit.map(|unit_id| (unit_id, tile)))
+        .filter_map(|(unit_id, tile)| game.units.get(unit_id).map(|unit| (unit_id, unit, tile)))
+        .filter(|(_, unit, tile)| unit.is_damaged() && tile.can_repair_unit(&unit))
+        .map(|(unit_id, mut unit, tile)| {
+            let new_unit_health = (unit.health + tile.repair_rate()).min(UNIT_MAX_HEALTH);
+            unit.health = new_unit_health;
+            (unit_id, unit)
+        })
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(unit_id, unit)| {
+            emit(Event::UnitRepair(unit_id, unit.health));
+            game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError)
+        })?;
+
+    Ok(())
+}
+fn finish_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, emit: &mut F) -> ActionResult<()> {
+    // Reset moved units
+    game.units.iter_with_ids()
+        .filter(|(_, u)| u.moved)
+        .map(|(i, u)| (*i, Unit { moved: false, ..u.clone() }))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(unit_id, unit)| {
+            game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError)
+        })?;
+
+    emit(Event::EndTurn(player_number));
+    Ok(())
+}
+pub fn end_turn<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+    let in_turn_number = game.in_turn_number().ok_or(ActionError::InternalError)?;
+    finish_turn(game, in_turn_number, &mut emit)?;
+    
+    // Update player alive statuses
+    let players_with_units = game.players_with_units();
+    let players_with_build_tiles = game.players_with_build_tiles();
+
+    let updated_players: Vec<_> = game.players.iter().filter_map(|p| {
+        let alive = players_with_units.contains(&p.number) || players_with_build_tiles.contains(&p.number);
+        if p.alive != alive {
+            Some(Player { alive, ..*p})
+        } else {
+            None
+        }
+    }).collect();
+
+    for updated_player in updated_players.into_iter() {
+        game.players.update(updated_player);
+    }
+
+    // Check win condition
+    if let Some(winner) = game.winner() {
+        emit(Event::WinGame(winner));
+        game.set_state(GameState::Finished).map_err(|_| ActionError::InternalError)?;
+        return Ok(());
+    }
+
+    // Set next player in turn
+    let in_turn_number = game.next_player_number().ok_or(ActionError::InternalError)?;
+    game.set_player_in_turn(in_turn_number).map_err(|_| ActionError::InternalError)?;
+
+    start_turn(game, in_turn_number, &mut emit)?;
+
+    Ok(())
+}
+
+pub fn surrender<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+    let in_turn_number = game.in_turn_number().ok_or(ActionError::GameNotInProgress)?;
+
+    // Neutralize owned tiles
+    game.tiles.owned_by_player(in_turn_number)
+        .map(|(tile_id, tile)| (tile_id, Tile { owner: None, ..*tile }))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(tile_id, tile)| game.tiles.update(tile_id, tile).map_err(|_| ActionError::InternalError))?;
+
+    // Neutralize owned units
+    game.units.owned_by_player(in_turn_number)
+        .map(|(unit_id, unit)| (unit_id, Unit { owner: None, ..unit.clone() }))
+        .collect::<Vec<_>>()
+        .into_iter()
+        .try_for_each(|(unit_id, unit)| game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError))?;
+
+    emit(Event::Surrender(in_turn_number));
+
+    end_turn(game, emit)
+}
+
+pub fn build(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
+}
+
+/// Helper function for actions that move a unit
+fn try_move(game: &mut Game, unit_id: UnitId, path: &[Position]) -> ActionResult<(TileId, Tile, TileId, Tile, Unit)> {
+    let unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
 
     game.unit_has_turn(&unit)?;
     game.unit_can_move_path(unit_id, path)?;
     game.unit_can_stay_at(unit_id, &path[path.len() - 1])?;
 
-    if path.len() > 1 {
-        let (src_tile_id, mut src_tile) = game.tiles.get_unit_tile(unit_id)?;
-        let (dst_tile_id, mut dst_tile) = game.tiles.get_at(&path[path.len() - 1])?;
+    let (src_tile_id, src_tile) = game.tiles.get_unit_tile(unit_id)?;
+    let (dst_tile_id, dst_tile) = game.tiles.get_at(&path[path.len() - 1])?;
+    Ok((src_tile_id, src_tile, dst_tile_id, dst_tile, unit))
+}
 
-        unit.moved = true;
-        src_tile.unit = None;
-        dst_tile.unit = Some(unit_id);
+pub fn move_and_wait<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+    let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
 
-        game.tiles.update(src_tile_id, src_tile);
-        game.tiles.update(dst_tile_id, dst_tile);
-        game.units.update(unit_id, unit);
-        emit(Event::Move(unit_id, path.into()));
+    unit.moved = true;
+    src_tile.unit = None;
+    dst_tile.unit = Some(unit_id);
+
+    game.tiles.update(src_tile_id, src_tile).map_err(|_| ActionError::InternalError)?;
+    game.tiles.update(dst_tile_id, dst_tile).map_err(|_| ActionError::InternalError)?;
+    game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError)?;
+
+    emit(Event::Move(unit_id, path.into()));
+    emit(Event::Wait(unit_id));
+    Ok(())
+}
+
+pub fn move_and_attack(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
+}
+
+pub fn move_and_capture<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+    let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
+
+    if !unit.can_capture() || !dst_tile.is_capturable() || dst_tile.owner == unit.owner {
+        return Err(ActionError::CannotCapture)
     }
 
-    emit(Event::Wait(unit_id));
-    Ok(path.len())
+    unit.moved = true;
+    unit.capturing = true;
+    src_tile.unit = None;
+    dst_tile.unit = Some(unit_id);
+    
+    emit(Event::Move(unit_id, path.into()));
+
+    if unit.health >= dst_tile.capture_points {
+        dst_tile.capture_points = 1;
+        dst_tile.owner = unit.owner;
+        emit(Event::Captured(unit_id, dst_tile_id));
+    } else {
+        let new_tile_capture_points = dst_tile.capture_points - unit.health;
+        dst_tile.capture_points = new_tile_capture_points;
+        emit(Event::Capture(unit_id, dst_tile_id, new_tile_capture_points));
+    }
+
+    game.tiles.update(src_tile_id, src_tile).map_err(|_| ActionError::InternalError)?;
+    game.tiles.update(dst_tile_id, dst_tile).map_err(|_| ActionError::InternalError)?;
+    game.units.update(unit_id, unit).map_err(|_| ActionError::InternalError)?;
+
+    Ok(())
+}
+
+pub fn move_and_deploy(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
+}
+
+pub fn undeploy(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
+}
+
+pub fn move_and_load_into(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
+}
+
+pub fn move_and_unload(_game: &mut Game) -> ActionResult<()> {
+    unimplemented!()
 }
 
 #[cfg(test)]
 mod test {
     use crate::game::*;
+    use crate::model::*;
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
 
     #[test]
-    fn third_party_first_turn() {
+    fn test_move_and_wait() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
         let mut game = Game::new(map, &[0, 1]);
-        assert!(start(&mut game) == Ok(()));
+        assert!(start(&mut game, |_| ()) == Ok(()));
 
         let mut events = Vec::new();
         let path: Vec<_> = [(0,13), (1,12), (1, 11), (2, 10)]
@@ -53,8 +243,66 @@ mod test {
         let result = move_and_wait(&mut game, 219, &path, |e| {
             events.push(e);
         });
-        assert!(result == Ok(4));
-        assert!(events[0] == Event::Move(219, path));
-        assert!(events[1] == Event::Wait(219));
+        assert!(result.is_ok());
+        assert_eq!(events, vec![
+                   Event::Move(219, path),
+                   Event::Wait(219)]);
+    }
+    #[test]
+    fn test_end_turn() {
+        let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
+        let mut game = Game::new(map, &[0, 1]);
+        assert!(start(&mut game, |_| ()) == Ok(()));
+
+        let mut events = Vec::new();
+        let path: Vec<_> = [(0,13), (1,12), (1, 11), (2, 10)]
+            .iter().map(|&(x, y)| Position(x, y)).collect();
+
+        move_and_wait(&mut game, 219, &path, |e| events.push(e)).unwrap();
+        end_turn(&mut game, |e| events.push(e)).unwrap();
+        assert_eq!(events, vec![
+                   Event::Move(219, path),
+                   Event::Wait(219),
+                   Event::EndTurn(1),
+                   Event::StartTurn(2),
+                   Event::Funds(2, 600)]);
+    }
+    #[test]
+    fn test_capture() {
+        let base = Tile { terrain: model::Terrain::Base, ..Tile::default() };
+        let map = Map {
+            name: "Test".into(),
+            units: [
+                (0usize, Unit { owner: Some(1), unit_type: UnitType::Infantry, ..Unit::default() })
+            ].iter().cloned().collect(),
+            tiles: [
+                (0usize, Tile { owner: Some(1), x: 0, y: 0, ..base }),
+                (1usize, Tile { owner: Some(2), x: 1, y: 0, unit: Some(0usize), ..base }),
+                (2usize, Tile { owner: Some(1), x: 0, y: 1, ..base }),
+                (3usize, Tile { owner: Some(2), x: 1, y: 1, ..base }),
+            ].iter().cloned().collect(),
+            funds: 0
+        };
+        let mut game = Game::new(map, &[1, 2]);
+        start(&mut game, |_| ()).unwrap();
+
+        let mut events = Vec::new();
+        move_and_capture(&mut game, 0usize, &[Position(1,0)], |e| events.push(e)).unwrap();
+        end_turn(&mut game, |e| events.push(e)).unwrap();
+        end_turn(&mut game, |e| events.push(e)).unwrap();
+        move_and_capture(&mut game, 0usize, &[Position(1,0)], |e| events.push(e)).unwrap();
+
+        assert_eq!(events, vec![
+                   Event::Move(0, [Position(1,0)].to_vec()),
+                   Event::Capture(0, 1, 100),
+                   Event::EndTurn(1),
+                   Event::StartTurn(2),
+                   Event::Funds(2, 150),
+                   Event::EndTurn(2),
+                   Event::StartTurn(1),
+                   Event::Funds(1, 200),
+                   Event::Move(0, [Position(1,0)].to_vec()),
+                   Event::Captured(0, 1),
+                   ]);
     }
 }

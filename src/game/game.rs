@@ -1,6 +1,7 @@
 use crate::game::*;
+use crate::model::*;
 use crate::util::*;
-use std::collections::hash_map;
+use std::collections::HashSet;
 
 impl Position {
     pub fn distance_to(&self, &Position(x, y): &Position) -> u32 {
@@ -26,6 +27,9 @@ impl Tiles {
             }
         })
     }
+    pub fn get(&self, tile_id: TileId) -> Option<Tile> {
+        self.0.get(&tile_id).cloned()
+    }
     pub fn get_unit_tile(&self, unit_id: UnitId) -> ActionResult<(TileId, Tile)> {
         self.0.iter()
             .filter(|&(_, t)| t.unit == Some(unit_id))
@@ -39,7 +43,7 @@ impl Tiles {
     }
     pub fn get_path_tiles(&self, path: &[Position]) -> ActionResult<Vec<Tile>> {
         let tiles: Vec<_> = path.iter().map(|&Position(x, y)| {
-            self.iter().filter(|t| t.x == x && t.y == y).only().map(|t| t.clone())
+            self.iter().filter(|t| t.x == x && t.y == y).only().cloned()
         }).collect();
 
         if tiles.iter().any(|t| t.is_none()) {
@@ -48,29 +52,64 @@ impl Tiles {
 
         Ok(tiles.into_iter().map(|t| t.unwrap()).collect())
     }
-    pub fn iter(&self) -> hash_map::Values<TileId, Tile> {
+    pub fn iter(&self) -> impl Iterator<Item=&Tile> {
         self.0.values()
     }
-    pub fn update(&mut self, id: TileId, tile: Tile) {
+    pub fn iter_with_ids(&self) -> impl Iterator<Item=(&TileId, &Tile)> {
+        self.0.iter()
+    }
+    pub fn iter_ids(&self) ->  impl Iterator<Item=&TileId> {
+        self.0.keys()
+    }
+    pub fn owned_by_player(&self, player_number: PlayerNumber) -> impl Iterator<Item=(TileId, &Tile)> {
+        self.iter_with_ids().filter(move |(_, tile)| tile.owner == Some(player_number)).map(|(tile_id, tile)| (*tile_id, tile))
+    }
+    pub fn update(&mut self, id: TileId, tile: Tile) -> GameUpdateResult<()> {
         if let Some(current) = self.0.get_mut(&id) {
             *current = tile;
+            Ok(())
+        } else {
+            Err(GameUpdateError::InvalidTileId)
         }
     }
 }
 
 impl Units {
-    pub fn iter(&self) -> hash_map::Values<UnitId, Unit> {
+    pub fn iter(&self) ->  impl Iterator<Item=&Unit> {
         self.0.values()
+    }
+    pub fn iter_ids(&self) -> impl Iterator<Item=&UnitId> {
+        self.0.keys()
+    }
+    pub fn iter_with_ids(&self) -> impl Iterator<Item=(&UnitId, &Unit)> {
+        self.0.iter()
     }
     pub fn get_ref(&self, id: &UnitId) -> Option<&Unit> {
         self.0.get(id)
     }
-    pub fn get(&self, unit_id: UnitId) -> ActionResult<Unit> {
-        self.0.get(&unit_id).map(|u| u.clone()).ok_or(ActionError::UnitNotFound)
+    pub fn get(&self, unit_id: UnitId) -> Option<Unit> {
+        self.0.get(&unit_id).cloned()
     }
-    pub fn update(&mut self, id: UnitId, tile: Unit) {
+    pub fn owned_by_player(&self, player_number: PlayerNumber) -> impl Iterator<Item=(UnitId, &Unit)> {
+        self.iter_with_ids().filter(move |(_, unit)| unit.owner == Some(player_number)).map(|(unit_id, unit)| (*unit_id, unit))
+    }
+    pub fn update(&mut self, id: UnitId, unit: Unit) -> GameUpdateResult<()> {
         if let Some(current) = self.0.get_mut(&id) {
-            *current = tile;
+            *current = unit;
+            Ok(())
+        } else {
+            Err(GameUpdateError::InvalidUnitId)
+        }
+    }
+}
+
+impl Players {
+    pub fn iter(&self) ->  impl Iterator<Item=&Player> {
+        self.0.iter()
+    }
+    pub fn update(&mut self, player: Player) {
+        if let Some(current) = self.0.iter_mut().filter(|p| p.number == player.number).only() {
+            *current = player;
         }
     }
 }
@@ -80,13 +119,14 @@ impl Game {
             map.units.iter().map(|(id, _)| id).max().unwrap_or(&0)
         };
 
-        let players = {
+        let players = Players(
             players.iter().enumerate().map(|(number, &uid)| Player {
                 user_id: uid,
                 number: number as u32 + 1,
                 funds: map.funds,
-                score: 0 }).collect()
-        };
+                score: 0,
+                alive: true
+            }).collect());
 
         Game {
             state: GameState::Pregame,
@@ -100,6 +140,27 @@ impl Game {
         }
     }
 
+    // Mutators
+
+    pub fn set_player_in_turn(&mut self, player_number: PlayerNumber) -> GameUpdateResult<()> {
+        self.in_turn_index = self.players.0.iter()
+            .enumerate()
+            .filter(|(_, p)| p.number == player_number)
+            .map(|(i, _)| i)
+            .next()
+            .ok_or(GameUpdateError::InvalidPlayerNumber)?;
+        Ok(())
+    }
+    pub fn set_state(&mut self, state: GameState) -> GameUpdateResult<()> {
+        match (&self.state, &state) {
+            (GameState::Pregame, GameState::InProgress) => Ok(()),
+            (GameState::InProgress, GameState::Finished) => Ok(()),
+            _ => Err(GameUpdateError::InvalidStateTransition)
+        }?;
+
+        self.state = state;
+        Ok(())
+    }
     pub fn ascii_representation(&self) -> String {
         if let Some((x0, y0, x1, y1)) = self.tiles.rect() {
             let buffer_height = (2 * (x1 - x0) + 4 * (y1 - y0) + 5) as usize;
@@ -143,20 +204,30 @@ impl Game {
 
             // Map each row vector into a string, filter empty lines
             // collect as a vector of strings, join with newline
-            buffer.iter().map(|v| v.iter().collect::<String>())
+            let map: String = buffer.iter().map(|v| v.iter().collect::<String>())
                 .filter(|l| l.chars().any(|c| c != ' '))
-                .collect::<Vec<_>>().join("\n")
+                .collect::<Vec<_>>().join("\n");
+
+            let terrain_types: std::collections::BTreeSet<Terrain> = self.tiles.iter().map(|tile| tile.terrain).collect();
+            let terrain_names = terrain_types.into_iter().map(|t| format!("{}: {}", to_char(t as u32), terrain(t).name)).collect::<Vec<String>>().join(", ");
+
+            let unit_types: std::collections::BTreeSet<UnitType> = self.units.iter().map(|unit| unit.unit_type).collect();
+            let unit_names = unit_types.into_iter().map(|t| format!("{}: {}", to_char(t as u32), unit_type(t).name)).collect::<Vec<String>>().join(", ");
+            
+            [map, terrain_names, unit_names].join("\n")
         } else {
             "<no data>".to_owned()
         }
     }
+
+    // Selectors
 
     pub fn unit_can_move_path(&self, unit_id: UnitId, path: &[Position]) -> ActionResult<()> {
         if path.is_empty() {
             return Err(ActionError::InvalidPath);
         }
 
-        let unit = self.units.get(unit_id)?;
+        let unit = self.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
         let tiles = self.tiles.get_path_tiles(path)?;
 
         if tiles[0].unit != Some(unit_id) {
@@ -215,9 +286,38 @@ impl Game {
     }
     pub fn in_turn_number(&self) -> Option<PlayerNumber> {
         match self.state {
-            GameState::InProgress => Some(self.players[self.in_turn_index].number),
+            GameState::InProgress => Some(self.players.0[self.in_turn_index].number),
             _ => None
         }
+    }
+    pub fn in_turn_player(&self) -> Option<Player> {
+        if self.state == GameState::InProgress {
+            Some(self.players.0.get(self.in_turn_index).unwrap().clone())
+        } else {
+            None
+        }
+    }
+    pub fn get_player(&self, player_number: PlayerNumber) -> Option<Player> {
+        self.players.0.iter().filter(|p| p.number == player_number).cloned().next()
+    }
+    pub fn next_player_number(&self) -> Option<PlayerNumber> {
+        let next_in_turn_index = (0..self.players.0.len())
+            .map(|i| (i + 1 + self.in_turn_index) % self.players.0.len())
+            .filter(|i| self.players.0.get(*i).unwrap().alive)
+            .next()?;
+        
+        Some(self.players.0.get(next_in_turn_index).unwrap().number)
+    }
+    pub fn players_with_units(&self) -> HashSet<PlayerNumber> {
+        self.units.iter()
+            .filter_map(|u| u.owner)
+            .collect()
+    }
+    pub fn players_with_build_tiles(&self) -> HashSet<PlayerNumber> {
+        self.tiles.iter()
+            .filter(|t| !terrain(t.terrain).build_classes.is_empty())
+            .filter_map(|t| t.owner)
+            .collect()
     }
     pub fn unit_has_turn(&self, unit: &Unit) -> ActionResult<()> {
         if unit.moved {
@@ -229,6 +329,16 @@ impl Game {
         }
 
         Ok(())
+    }
+    pub fn winner(&self) -> Option<PlayerNumber> {
+        // TODO: Add short-circuit for when only one player can do anything
+        let mut alive_players = self.players.0.iter().filter(|p| p.alive);
+        let maybe_winner = alive_players.next()?;
+        if alive_players.next().is_none() {
+            Some(maybe_winner.number)
+        } else {
+            None
+        }
     }
 }
 

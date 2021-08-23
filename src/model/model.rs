@@ -3,6 +3,8 @@ use crate::model::*;
 pub const MAX_CAPTURE_POINTS: u32 = 200;
 pub const CAPTURE_POINT_REGEN_RATE: u32 = 50;
 pub const FUNDS_PER_PROPERTY: u32 = 100;
+pub const UNIT_MAX_HEALTH: u32 = 100;
+pub const UNIT_MAX_REPAIR_RATE: u32 = 20;
 
 pub fn weapon(x: Weapon) -> WeaponData<'static> {
     use model::Weapon::*;

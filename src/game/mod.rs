@@ -6,7 +6,7 @@ mod game;
 mod unit;
 mod tile;
 mod map;
-mod action;
+pub mod action;
 pub use self::game::*;
 pub use self::unit::*;
 pub use self::tile::*;
@@ -18,11 +18,17 @@ pub type TileId = usize;
 pub type PlayerNumber = u32;
 pub type TerrainSubtypeId = u32;
 pub type Rect = (i32, i32, i32, i32);
+pub type Health = u32;
+pub type Credits = u32;
+pub type CapturePoints = u32;
 
+#[derive(PartialEq)]
 pub enum GameState { Pregame = 0, InProgress, Finished }
 
 pub struct Tiles(HashMap<TileId, Tile>);
 pub struct Units(HashMap<UnitId, Unit>);
+pub struct Players(Vec<Player>);
+
 #[derive(Clone,Debug,PartialEq)]
 pub struct Position(i32, i32);
 
@@ -30,7 +36,7 @@ pub struct Game {
     pub state: GameState,
     pub units: Units,
     pub tiles: Tiles,
-    pub players: Vec<Player>,
+    pub players: Players,
     pub in_turn_index: usize,
     pub round_count: u32,
     pub turn_count: u32,
@@ -41,16 +47,17 @@ pub struct Game {
 pub struct Player {
     pub user_id: auth::UserId,
     pub number: PlayerNumber,
-    pub funds: u32,
-    pub score: u32
+    pub funds: Credits,
+    pub score: u32,
+    pub alive: bool
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Tile {
     pub terrain: model::Terrain,
     pub terrain_subtype_id: TerrainSubtypeId,
     pub owner: Option<PlayerNumber>,
-    pub capture_points: u32,
+    pub capture_points: CapturePoints,
     pub unit: Option<UnitId>,
     pub x: i32,
     pub y: i32
@@ -59,7 +66,7 @@ pub struct Tile {
 #[derive(Clone,Debug)]
 pub struct Unit {
     pub unit_type: model::UnitType,
-    pub health: u32,
+    pub health: Health,
     pub carried: Vec<UnitId>,
     pub owner: Option<PlayerNumber>,
     pub deployed: bool,
@@ -76,13 +83,33 @@ pub struct Map {
 
 #[derive(Debug,PartialEq)]
 pub enum ActionError {
+    InternalError,
     UnitNotFound, OwnerNotInTurn, UnitAlreadyMoved, GameNotInProgress, InvalidPath,
-    UnitNotOnMap, GameAlreadyStarted
+    UnitNotOnMap, GameAlreadyStarted, CannotCapture
 }
 
+#[derive(Debug,PartialEq)]
+pub enum GameUpdateError {
+    InvalidStateTransition,
+    InvalidPlayerNumber,
+    InvalidUnitId,
+    InvalidTileId
+}
+pub type GameUpdateResult<T> = Result<T, GameUpdateError>;
 pub type ActionResult<T> = Result<T, ActionError>;
 
 #[derive(Debug,PartialEq)]
 pub enum Event {
-    Move(UnitId, Vec<Position>), Wait(UnitId)
+    StartTurn(PlayerNumber),
+    EndTurn(PlayerNumber),
+    Funds(PlayerNumber, Credits),
+    UnitRepair(UnitId, Health),
+    WinGame(PlayerNumber),
+    Surrender(PlayerNumber),
+    Move(UnitId, Vec<Position>),
+    Wait(UnitId),
+    Capture(UnitId, TileId, CapturePoints),
+    Captured(UnitId, TileId),
+    TileCapturePointRegen(TileId, CapturePoints)
+
 }

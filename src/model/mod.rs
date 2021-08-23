@@ -1,7 +1,7 @@
 mod model;
 pub use self::model::*;
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord)]
 pub enum UnitType {
     Infantry, ATInfantry, Scout,
     LightTank, MediumTank, HeavyTank,
@@ -36,7 +36,7 @@ pub enum Weapon {
     InterceptorMissile, AerialBomb,
     CruiserArtillery, HeavyMachinegun
 }
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord)]
 pub enum Terrain {
     Road, Plains, Forest, Mountains, Water,
     City, Base, Fort, Airport, Port,
