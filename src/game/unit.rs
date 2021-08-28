@@ -28,4 +28,14 @@ impl Unit {
     pub fn can_capture(&self) -> bool {
         self.has_unit_flag(UnitFlag::Capture)
     }
+    pub fn can_deploy(&self) -> bool {
+        self.unit_type_data().weapons.iter().any(|w| weapon(*w).require_deployed)
+    }
+    pub fn can_carry(&self, target: &Unit) -> bool {
+        self.unit_type_data().carry_num > self.carried.len() as u32
+            && self.unit_type_data().carry_classes.contains(&target.unit_type_data().unit_class)
+    }
+    pub fn can_move_on_terrain(&self, terrain_type: Terrain) -> bool {
+        (movement(self.unit_type_data().movement_type).terrain_cost_map)(terrain_type).is_some()
+    }
 }

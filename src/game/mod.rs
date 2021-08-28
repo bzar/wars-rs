@@ -85,7 +85,8 @@ pub struct Map {
 pub enum ActionError {
     InternalError,
     UnitNotFound, OwnerNotInTurn, UnitAlreadyMoved, GameNotInProgress, InvalidPath,
-    UnitNotOnMap, GameAlreadyStarted, CannotCapture
+    UnitNotOnMap, GameAlreadyStarted, CannotCapture, CannotDeploy, CannotUndeploy,
+    CannotLoad, CannotUnload
 }
 
 #[derive(Debug,PartialEq)]
@@ -108,8 +109,12 @@ pub enum Event {
     Surrender(PlayerNumber),
     Move(UnitId, Vec<Position>),
     Wait(UnitId),
+    Deploy(UnitId),
+    Undeploy(UnitId),
+    Load(UnitId, UnitId),
+    Unload(UnitId, UnitId, Position),
     Capture(UnitId, TileId, CapturePoints),
     Captured(UnitId, TileId),
-    TileCapturePointRegen(TileId, CapturePoints)
+    TileCapturePointRegen(TileId, CapturePoints),
 
 }

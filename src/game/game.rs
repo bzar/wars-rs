@@ -18,6 +18,19 @@ impl Position {
         result as u32
     }
 }
+
+impl From<&(i32, i32)> for Position {
+    fn from(&(x, y): &(i32, i32)) -> Self {
+        Position(x, y)
+    }
+}
+
+impl From<GameUpdateError> for ActionError {
+    fn from(_: GameUpdateError) -> Self {
+        Self::InternalError
+    }
+}
+
 impl Tiles {
     pub fn rect(&self) -> Option<Rect> {
         self.0.values().fold(None, |x, t| {
@@ -42,15 +55,12 @@ impl Tiles {
             .ok_or(ActionError::InvalidPath)
     }
     pub fn get_path_tiles(&self, path: &[Position]) -> ActionResult<Vec<Tile>> {
-        let tiles: Vec<_> = path.iter().map(|&Position(x, y)| {
-            self.iter().filter(|t| t.x == x && t.y == y).only().cloned()
-        }).collect();
-
-        if tiles.iter().any(|t| t.is_none()) {
-            return Err(ActionError::InvalidPath);
-        }
-
-        Ok(tiles.into_iter().map(|t| t.unwrap()).collect())
+        path.iter()
+            .map(|&Position(x, y)| {
+                self.iter().filter(|t| t.x == x && t.y == y).only().cloned()
+            })
+            .collect::<Option<Vec<Tile>>>()
+            .ok_or(ActionError::InvalidPath)
     }
     pub fn iter(&self) -> impl Iterator<Item=&Tile> {
         self.0.values()
@@ -159,6 +169,17 @@ impl Game {
         }?;
 
         self.state = state;
+        Ok(())
+    }
+    pub fn update_tiles_and_units(&mut self,
+                                  tiles: impl IntoIterator<Item=(TileId, Tile)>,
+                                  units: impl IntoIterator<Item=(UnitId, Unit)>) -> GameUpdateResult<()> {
+        for (tile_id, tile) in tiles.into_iter() {
+            self.tiles.update(tile_id, tile)?;
+        }
+        for (unit_id, unit) in units.into_iter() {
+            self.units.update(unit_id, unit)?;
+        }
         Ok(())
     }
     pub fn ascii_representation(&self) -> String {
