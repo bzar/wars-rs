@@ -32,7 +32,7 @@ mod test {
         let players = vec![1, 2];
 
         let mut game = game::Game::new(map, &players);
-        assert_eq!(game::action::start(&mut game, |_| ()), Ok(()));
+        assert_eq!(game::action::start(&mut game, &mut |_| ()), Ok(()));
         assert_eq!(game.in_turn_player().unwrap().funds, 42 + model::FUNDS_PER_PROPERTY);
     }
 }

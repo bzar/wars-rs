@@ -1,15 +1,15 @@
 use crate::game::*;
 use crate::model::*;
 
-pub fn start<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+pub fn start(game: &mut Game, emit:  &mut dyn FnMut(Event)) -> ActionResult<()> {
     game.set_state(GameState::InProgress).map_err(|_| ActionError::GameAlreadyStarted)?;
     let in_turn_number = game.in_turn_number().ok_or(ActionError::InternalError)?;
-    start_turn(game, in_turn_number, &mut emit)?;
+    start_turn(game, in_turn_number, emit)?;
     Ok(())
 }
 
 
-fn start_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, emit: &mut F) -> ActionResult<()> {
+fn start_turn(game: &mut Game, player_number: PlayerNumber, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     emit(Event::StartTurn(player_number));
 
     let mut player = game.get_player(player_number).ok_or(ActionError::InternalError)?;
@@ -68,7 +68,7 @@ fn start_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, emi
 
     Ok(())
 }
-fn finish_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, emit: &mut F) -> ActionResult<()> {
+fn finish_turn(game: &mut Game, player_number: PlayerNumber, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     // Reset moved units
     game.units.iter_with_ids()
         .filter(|(_, u)| u.moved)
@@ -80,9 +80,9 @@ fn finish_turn<F: FnMut(Event)>(game: &mut Game, player_number: PlayerNumber, em
     emit(Event::EndTurn(player_number));
     Ok(())
 }
-pub fn end_turn<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+pub fn end_turn(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let in_turn_number = game.in_turn_number().ok_or(ActionError::InternalError)?;
-    finish_turn(game, in_turn_number, &mut emit)?;
+    finish_turn(game, in_turn_number, emit)?;
     
     // Update player alive statuses
     let players_with_units = game.players_with_units();
@@ -112,12 +112,12 @@ pub fn end_turn<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<(
     let in_turn_number = game.next_player_number().ok_or(ActionError::InternalError)?;
     game.set_player_in_turn(in_turn_number)?;
 
-    start_turn(game, in_turn_number, &mut emit)?;
+    start_turn(game, in_turn_number, emit)?;
 
     Ok(())
 }
 
-pub fn surrender<F: FnMut(Event)>(game: &mut Game, mut emit: F) -> ActionResult<()> {
+pub fn surrender(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let in_turn_number = game.in_turn_number().ok_or(ActionError::GameNotInProgress)?;
 
     // Neutralize owned tiles
@@ -156,7 +156,7 @@ fn try_move(game: &mut Game, unit_id: UnitId, path: &[Position]) -> ActionResult
     Ok((src_tile_id, src_tile, dst_tile_id, dst_tile, unit))
 }
 
-pub fn move_and_wait<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+pub fn move_and_wait(game: &mut Game, unit_id: UnitId, path: &[Position], emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
 
     unit.moved = true;
@@ -176,7 +176,7 @@ pub fn move_and_attack(_game: &mut Game) -> ActionResult<()> {
     unimplemented!()
 }
 
-pub fn move_and_capture<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+pub fn move_and_capture(game: &mut Game, unit_id: UnitId, path: &[Position], emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
 
     if !unit.can_capture() || !dst_tile.is_capturable() || dst_tile.owner == unit.owner {
@@ -207,7 +207,7 @@ pub fn move_and_capture<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path:
     Ok(())
 }
 
-pub fn move_and_deploy<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+pub fn move_and_deploy(game: &mut Game, unit_id: UnitId, path: &[Position], emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
 
     if !unit.can_deploy() || unit.deployed {
@@ -229,7 +229,7 @@ pub fn move_and_deploy<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: 
     Ok(())
 }
 
-pub fn undeploy<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, mut emit: F) -> ActionResult<()> {
+pub fn undeploy(game: &mut Game, unit_id: UnitId, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
     game.unit_has_turn(&unit)?;
     if !unit.deployed {
@@ -246,7 +246,7 @@ pub fn undeploy<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, mut emit: F) 
     Ok(())
 }
 
-pub fn move_and_load_into<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, path: &[Position], mut emit: F) -> ActionResult<()> {
+pub fn move_and_load_into(game: &mut Game, unit_id: UnitId, path: &[Position], emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
     let carrier_id = game.tiles
         .get_at(path.last().ok_or(ActionError::InvalidPath)?)
@@ -277,14 +277,14 @@ pub fn move_and_load_into<F: FnMut(Event)>(game: &mut Game, unit_id: UnitId, pat
     Ok(())
 }
 
-pub fn move_and_unload<F: FnMut(Event)>(game: &mut Game, carrier_id: UnitId, path: &[Position], carried_id: UnitId, unload_position: Position, mut emit: F) -> ActionResult<()> {
+pub fn move_and_unload(game: &mut Game, carrier_id: UnitId, path: &[Position], carried_id: UnitId, unload_position: Position, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut carrier) = try_move(game, carrier_id, path)?;
     let mut carried = game.units.get(carried_id).ok_or(ActionError::UnitNotFound)?;
     let (unload_tile_id, mut unload_tile) = game.tiles.get_at(&unload_position)?;
 
     if !carrier.carried.contains(&carried_id)
         || unload_position.distance_to(path.last().ok_or(ActionError::InvalidPath)?) != 1
-        || carried.can_move_on_terrain(unload_tile.terrain) {
+        || !carried.can_move_on_terrain(unload_tile.terrain) {
         return Err(ActionError::CannotUnload);
     }
 
@@ -326,13 +326,12 @@ mod test {
     fn test_move_and_wait() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
         let mut game = Game::new(map, &[0, 1]);
-        assert!(start(&mut game, |_| ()) == Ok(()));
+        assert!(start(&mut game, &mut |_| ()) == Ok(()));
 
         let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
         let unit_path = path(&[(0,13), (1,12), (1, 11), (2, 10)]);
-        let result = move_and_wait(&mut game, 219, &unit_path, |e| {
-            events.push(e);
-        });
+        let result = move_and_wait(&mut game, 219, &unit_path, emit);
         assert!(result.is_ok());
         assert_eq!(events, vec![
                    Event::Move(219, unit_path),
@@ -342,10 +341,11 @@ mod test {
     fn test_end_turn() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
         let mut game = Game::new(map, &[0, 1]);
-        assert!(start(&mut game, |_| ()) == Ok(()));
+        assert!(start(&mut game, &mut |_| ()) == Ok(()));
 
         let mut events = Vec::new();
-        end_turn(&mut game, |e| events.push(e)).unwrap();
+        let emit = &mut |e| events.push(e);
+        end_turn(&mut game, emit).unwrap();
         assert_eq!(events, vec![
                    Event::EndTurn(1),
                    Event::StartTurn(2),
@@ -360,14 +360,15 @@ mod test {
                                        &[Tile { owner: Some(1), ..base }, Tile { owner: Some(2), ..base}]]);
         let map = Map { name: "Test".into(), units, tiles, funds: 0 };
         let mut game = Game::new(map, &[1, 2]);
-        start(&mut game, |_| ()).unwrap();
+        start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
         let unit_path = path(&[(1,0)]);
-        move_and_capture(&mut game, 0usize, &unit_path, |e| events.push(e)).unwrap();
-        end_turn(&mut game, |_| ()).unwrap();
-        end_turn(&mut game, |_| ()).unwrap();
-        move_and_capture(&mut game, 0usize, &unit_path, |e| events.push(e)).unwrap();
+        move_and_capture(&mut game, 0usize, &unit_path, emit).unwrap();
+        end_turn(&mut game, &mut |_| ()).unwrap();
+        end_turn(&mut game, &mut |_| ()).unwrap();
+        move_and_capture(&mut game, 0usize, &unit_path, emit).unwrap();
 
         assert_eq!(events, vec![
                    Event::Move(0, unit_path.clone()),
@@ -386,21 +387,56 @@ mod test {
                                        &[Tile { owner: Some(1), ..base }, Tile { owner: Some(2), ..base}]]);
         let map = Map { name: "Test".into(), units, tiles, funds: 0 };
         let mut game = Game::new(map, &[1, 2]);
-        start(&mut game, |_| ()).unwrap();
+        start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
         let unit_id = 0;
         let unit_path = path(&[(1, 0), (1, 1)]);
 
-        move_and_deploy(&mut game, unit_id, &unit_path, |e| events.push(e)).unwrap();
-        end_turn(&mut game, |_| ()).unwrap();
-        end_turn(&mut game, |_| ()).unwrap();
-        undeploy(&mut game, unit_id, |e| events.push(e)).unwrap();
+        move_and_deploy(&mut game, unit_id, &unit_path, emit).unwrap();
+        end_turn(&mut game, &mut |_| ()).unwrap();
+        end_turn(&mut game, &mut |_| ()).unwrap();
+        undeploy(&mut game, unit_id, emit).unwrap();
 
         assert_eq!(events, vec![
                    Event::Move(unit_id, unit_path),
                    Event::Deploy(unit_id),
                    Event::Undeploy(unit_id),
+                   ]);
+
+    }
+
+    #[test]
+    fn test_load_unload() {
+        let plains = Tile { terrain: model::Terrain::Plains, ..Tile::default() };
+        let units = [
+            Unit { owner: Some(1), unit_type: UnitType::Infantry, ..Unit::default() },
+            Unit { owner: Some(1), unit_type: UnitType::APC, ..Unit::default() },
+            Unit { owner: Some(2), ..Unit::default() }]
+            .iter().cloned().enumerate().collect();
+        let tiles = tiles_from_array(&[&[Tile {unit: Some(0), ..plains }, Tile {..plains}],
+                                       &[Tile {unit: Some(1), ..plains }, Tile {..plains}],
+                                       &[Tile {..plains }, Tile {..plains}],
+                                       &[Tile {..plains }, Tile {unit: Some(2), ..plains}],
+        ]);
+        let map = Map { name: "Test".into(), units, tiles, funds: 0 };
+        let mut game = Game::new(map, &[1, 2]);
+        start(&mut game, &mut |_| ()).unwrap();
+
+        let unit_id = 0;
+        let carrier_id = 1;
+        let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
+
+        move_and_load_into(&mut game, unit_id, &path(&[(0,0), (0,1)]), emit).unwrap();
+        move_and_unload(&mut game, carrier_id, &path(&[(0,1), (1,1)]), unit_id, Position(1, 0), emit).unwrap();
+
+        assert_eq!(events, vec![
+                   Event::Move(unit_id, path(&[(0,0), (0,1)])),
+                   Event::Load(unit_id, carrier_id),
+                   Event::Move(carrier_id, path(&[(0,1), (1,1)])),
+                   Event::Unload(carrier_id, unit_id, Position(1,0)),
                    ]);
 
     }
