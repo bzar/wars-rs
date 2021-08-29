@@ -481,6 +481,7 @@ mod test {
         build(&mut game, Position(0, 0), UnitType::HeavyTank, emit).expect_err("Should not have enough funds");
         end_turn(&mut game, &mut |_| ()).unwrap();
         build(&mut game, Position(1, 0), UnitType::ATInfantry, emit).unwrap();
+        assert_eq!(game.in_turn_player().unwrap().funds, 0);
 
         assert_eq!(events, vec![
                    Event::Build(0, 0, UnitType::Infantry, 100),
