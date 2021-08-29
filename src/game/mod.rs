@@ -12,6 +12,7 @@ pub use self::unit::*;
 pub use self::tile::*;
 pub use self::map::*;
 pub use self::action::*;
+pub use model::UnitType;
 
 pub type UnitId = usize;
 pub type TileId = usize;
@@ -86,7 +87,7 @@ pub enum ActionError {
     InternalError,
     UnitNotFound, OwnerNotInTurn, UnitAlreadyMoved, GameNotInProgress, InvalidPath,
     UnitNotOnMap, GameAlreadyStarted, CannotCapture, CannotDeploy, CannotUndeploy,
-    CannotLoad, CannotUnload
+    CannotLoad, CannotUnload, CannotBuild, InsufficientFunds
 }
 
 #[derive(Debug,PartialEq)]
@@ -115,6 +116,7 @@ pub enum Event {
     Unload(UnitId, UnitId, Position),
     Capture(UnitId, TileId, CapturePoints),
     Captured(UnitId, TileId),
+    Build(TileId, UnitId, UnitType, Credits),
     TileCapturePointRegen(TileId, CapturePoints),
 
 }

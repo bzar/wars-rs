@@ -20,7 +20,7 @@ fn start_turn(game: &mut Game, player_number: PlayerNumber, emit: &mut dyn FnMut
             .sum();
 
     player.funds += generated_funds;
-    game.players.update(player);
+    game.players.update(player)?;
     emit(Event::Funds(player_number, generated_funds));
 
     // Reset unit capture statuses
@@ -97,9 +97,7 @@ pub fn end_turn(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()
         }
     }).collect();
 
-    for updated_player in updated_players.into_iter() {
-        game.players.update(updated_player);
-    }
+    updated_players.into_iter().try_for_each(|p| game.players.update(p))?;
 
     // Check win condition
     if let Some(winner) = game.winner() {
@@ -139,8 +137,32 @@ pub fn surrender(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<(
     end_turn(game, emit)
 }
 
-pub fn build(_game: &mut Game) -> ActionResult<()> {
-    unimplemented!()
+pub fn build(game: &mut Game, position: Position, build_type: UnitType, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
+    let mut in_turn_player = game.in_turn_player().ok_or(ActionError::GameNotInProgress)?;
+    let (tile_id, mut tile) = game.tiles.get_at(&position)?;
+
+    if tile.owner != Some(in_turn_player.number) {
+        return Err(ActionError::OwnerNotInTurn);
+    }
+    if !tile.can_build(build_type) || tile.unit.is_some() {
+        return Err(ActionError::CannotBuild);
+    }
+    let price = unit_type(build_type).price;
+    if in_turn_player.funds < price {
+        return Err(ActionError::InsufficientFunds);
+    }
+
+    let unit = Unit { unit_type: build_type, moved: true, ..Unit::default() };
+    let unit_id = game.units.insert(unit);
+    tile.unit = Some(unit_id);
+    in_turn_player.funds -= price;
+
+    emit(Event::Build(tile_id, unit_id, build_type, price));
+
+    game.tiles.update(tile_id, tile)?;
+    game.players.update(in_turn_player)?;
+
+    Ok(())
 }
 
 /// Helper function for actions that move a unit
@@ -440,4 +462,31 @@ mod test {
                    ]);
 
     }
+
+    #[test]
+    fn test_build() {
+        let base = Tile { terrain: model::Terrain::Base, ..Tile::default() };
+        let units = [].iter().cloned().enumerate().collect();
+        let tiles = tiles_from_array(&[&[Tile { owner: Some(1), ..base }, Tile { owner: Some(2), ..base}],
+                                       &[Tile { owner: Some(1), ..base }, Tile { owner: Some(2), ..base}]]);
+        let map = Map { name: "Test".into(), units, tiles, funds: 0 };
+        let mut game = Game::new(map, &[1, 2]);
+        start(&mut game, &mut |_| ()).unwrap();
+
+        let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
+
+        build(&mut game, Position(0, 0), UnitType::Infantry, emit).unwrap();
+        build(&mut game, Position(0, 0), UnitType::Bomber, emit).expect_err("Base shouldn't be able to build bombers");
+        build(&mut game, Position(0, 0), UnitType::HeavyTank, emit).expect_err("Should not have enough funds");
+        end_turn(&mut game, &mut |_| ()).unwrap();
+        build(&mut game, Position(1, 0), UnitType::ATInfantry, emit).unwrap();
+
+        assert_eq!(events, vec![
+                   Event::Build(0, 0, UnitType::Infantry, 100),
+                   Event::Build(1, 1, UnitType::ATInfantry, 200),
+                   ]);
+
+    }
+
 }

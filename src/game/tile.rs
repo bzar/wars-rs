@@ -43,4 +43,7 @@ impl Tile {
     pub fn is_capturable(&self) -> bool {
         self.has_terrain_flag(TerrainFlag::Capturable)
     }
+    pub fn can_build(&self, target_type: UnitType) -> bool {
+        self.terrain_data().build_classes.contains(&unit_type(target_type).unit_class)
+    }
 }

@@ -75,12 +75,9 @@ impl Tiles {
         self.iter_with_ids().filter(move |(_, tile)| tile.owner == Some(player_number)).map(|(tile_id, tile)| (*tile_id, tile))
     }
     pub fn update(&mut self, id: TileId, tile: Tile) -> GameUpdateResult<()> {
-        if let Some(current) = self.0.get_mut(&id) {
-            *current = tile;
-            Ok(())
-        } else {
-            Err(GameUpdateError::InvalidTileId)
-        }
+        let current = self.0.get_mut(&id).ok_or(GameUpdateError::InvalidTileId)?;
+        *current = tile;
+        Ok(())
     }
 }
 
@@ -111,16 +108,22 @@ impl Units {
             Err(GameUpdateError::InvalidUnitId)
         }
     }
+    pub fn insert(&mut self, unit: Unit) -> UnitId {
+        // FIXME: smarter id system
+        let unit_id = self.iter_ids().max().map(|x| x + 1).unwrap_or(0);
+        self.0.insert(unit_id, unit);
+        unit_id
+    }
 }
 
 impl Players {
     pub fn iter(&self) ->  impl Iterator<Item=&Player> {
         self.0.iter()
     }
-    pub fn update(&mut self, player: Player) {
-        if let Some(current) = self.0.iter_mut().filter(|p| p.number == player.number).only() {
-            *current = player;
-        }
+    pub fn update(&mut self, player: Player) -> GameUpdateResult<()> {
+        let current = self.0.iter_mut().filter(|p| p.number == player.number).only().ok_or(GameUpdateError::InvalidPlayerNumber)?;
+        *current = player;
+        Ok(())
     }
 }
 impl Game {
