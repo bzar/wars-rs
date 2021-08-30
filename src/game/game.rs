@@ -43,10 +43,10 @@ impl Tiles {
     pub fn get(&self, tile_id: TileId) -> Option<Tile> {
         self.0.get(&tile_id).cloned()
     }
-    pub fn get_unit_tile(&self, unit_id: UnitId) -> ActionResult<(TileId, Tile)> {
+    pub fn get_unit_tile(&self, unit_id: UnitId) -> Option<(TileId, Tile)> {
         self.0.iter()
             .filter(|&(_, t)| t.unit == Some(unit_id))
-            .only().map(|(&id, t)| (id, t.clone())).ok_or(ActionError::UnitNotOnMap)
+            .only().map(|(&id, t)| (id, t.clone()))
     }
     pub fn get_at(&self, &Position(x, y): &Position) -> ActionResult<(TileId, Tile)> {
         self.0.iter()
@@ -113,6 +113,10 @@ impl Units {
         let unit_id = self.iter_ids().max().map(|x| x + 1).unwrap_or(0);
         self.0.insert(unit_id, unit);
         unit_id
+    }
+    pub fn remove(&mut self, unit_id: UnitId) -> GameUpdateResult<()> {
+        self.0.remove(&unit_id).ok_or(GameUpdateError::InvalidUnitId)?;
+        Ok(())
     }
 }
 

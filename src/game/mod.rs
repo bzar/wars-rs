@@ -87,7 +87,7 @@ pub enum ActionError {
     InternalError,
     UnitNotFound, OwnerNotInTurn, UnitAlreadyMoved, GameNotInProgress, InvalidPath,
     UnitNotOnMap, GameAlreadyStarted, CannotCapture, CannotDeploy, CannotUndeploy,
-    CannotLoad, CannotUnload, CannotBuild, InsufficientFunds
+    CannotLoad, CannotUnload, CannotBuild, InsufficientFunds, CannotAttack
 }
 
 #[derive(Debug,PartialEq)]
@@ -110,6 +110,9 @@ pub enum Event {
     Surrender(PlayerNumber),
     Move(UnitId, Vec<Position>),
     Wait(UnitId),
+    Attack(UnitId, UnitId, Health),
+    Counterattack(UnitId, UnitId, Health),
+    Destroyed(UnitId, UnitId),
     Deploy(UnitId),
     Undeploy(UnitId),
     Load(UnitId, UnitId),

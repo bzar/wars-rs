@@ -38,4 +38,8 @@ impl Unit {
     pub fn can_move_on_terrain(&self, terrain_type: Terrain) -> bool {
         (movement(self.unit_type_data().movement_type).terrain_cost_map)(terrain_type).is_some()
     }
+    pub fn defense_in_terrain(&self, terrain_type: Terrain) -> u32 {
+        (self.unit_type_data().defense_map)(terrain_type).unwrap_or_else(|| terrain(terrain_type).default_defense)
+    }
 }
+

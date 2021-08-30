@@ -173,7 +173,7 @@ fn try_move(game: &mut Game, unit_id: UnitId, path: &[Position]) -> ActionResult
     game.unit_can_move_path(unit_id, path)?;
     game.unit_can_stay_at(unit_id, &path[path.len() - 1])?;
 
-    let (src_tile_id, src_tile) = game.tiles.get_unit_tile(unit_id)?;
+    let (src_tile_id, src_tile) = game.tiles.get_unit_tile(unit_id).ok_or(ActionError::UnitNotOnMap)?;
     let (dst_tile_id, dst_tile) = game.tiles.get_at(path.last().ok_or(ActionError::InvalidPath)?)?;
     Ok((src_tile_id, src_tile, dst_tile_id, dst_tile, unit))
 }
@@ -194,8 +194,62 @@ pub fn move_and_wait(game: &mut Game, unit_id: UnitId, path: &[Position], emit: 
     Ok(())
 }
 
-pub fn move_and_attack(_game: &mut Game) -> ActionResult<()> {
-    unimplemented!()
+fn calculate_attack_damage(attacker: &Unit, target: &Unit, distance: u32, target_terrain: Terrain) -> Option<u32> {
+    let target_armor = unit_type(target.unit_type).armor_type;
+    let defense = attacker.defense_in_terrain(target_terrain);
+    attacker.unit_type_data().weapons.iter()
+        .map(|&w| weapon(dbg!(w)))
+        .filter(|w| !w.require_deployed || attacker.deployed)
+        .filter_map(|w| (w.range_map)(distance).map(|efficiency| (w, dbg!(efficiency))))
+        .filter_map(|(w, efficiency)| (w.power_map)(target_armor).map(|power| (efficiency, power)))
+        .map(|(efficiency, power)| dbg!(attacker.health * power * efficiency * defense) / (100_00_00))
+        .max()
+        .map(|damage| damage.max(1))
+
+}
+pub fn move_and_attack(game: &mut Game, unit_id: UnitId, path: &[Position], target_id: UnitId, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
+    let (src_tile_id, mut src_tile, dst_tile_id, mut dst_tile, mut unit) = try_move(game, unit_id, path)?;
+
+    let mut target = game.units.get(target_id).ok_or(ActionError::UnitNotFound)?;
+    let (target_tile_id, mut target_tile) = game.tiles.get_unit_tile(target_id).ok_or(ActionError::UnitNotOnMap)?;
+    let distance = Position(dst_tile.x, dst_tile.y).distance_to(&Position(target_tile.x, target_tile.y));
+    let damage = calculate_attack_damage(&unit, &target, distance, target_tile.terrain).ok_or(ActionError::CannotAttack)?;
+
+    emit(Event::Move(unit_id, path.into()));
+    emit(Event::Attack(unit_id, target_id, damage));
+
+    unit.moved = true;
+    src_tile.unit = None;
+    dst_tile.unit = Some(unit_id);
+
+    if damage >= target.health {
+        emit(Event::Destroyed(unit_id, target_id));
+        target_tile.unit = None;
+        game.units.remove(target_id)?;
+    } else {
+        target.health -= damage;
+
+        if let Some(counter_damage) = calculate_attack_damage(&target, &unit, distance, dst_tile.terrain) {
+            emit(Event::Counterattack(target_id, unit_id, counter_damage));
+            if counter_damage >= unit.health {
+                emit(Event::Destroyed(target_id, unit_id));
+                dst_tile.unit = None;
+                game.units.remove(unit_id)?;
+            } else {
+                unit.health -= counter_damage;
+                game.units.update(unit_id, unit)?;
+            }
+        }
+
+        game.units.update(target_id, target)?;
+    }
+
+    game.update_tiles_and_units(
+        [(src_tile_id, src_tile), (dst_tile_id, dst_tile), (target_tile_id, target_tile)],
+        [])?;
+
+
+    Ok(())
 }
 
 pub fn move_and_capture(game: &mut Game, unit_id: UnitId, path: &[Position], emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
@@ -283,7 +337,7 @@ pub fn move_and_load_into(game: &mut Game, unit_id: UnitId, path: &[Position], e
         return Err(ActionError::CannotLoad);
     }
 
-    let (src_tile_id, mut src_tile) = game.tiles.get_unit_tile(unit_id)?;
+    let (src_tile_id, mut src_tile) = game.tiles.get_unit_tile(unit_id).ok_or(ActionError::UnitNotOnMap)?;
 
     src_tile.unit = None;
     unit.moved = true;
@@ -490,4 +544,28 @@ mod test {
 
     }
 
+    #[test]
+    fn test_attack() {
+        let base = Tile { terrain: model::Terrain::Base, ..Tile::default() };
+        let infantry = Unit { unit_type: UnitType::Infantry, ..Unit::default() };
+        let units = [Unit { owner: Some(1), ..infantry.clone() }, Unit { owner: Some(2), ..infantry.clone() }]
+            .iter().cloned().enumerate().collect();
+        let tiles = tiles_from_array(&[&[Tile { owner: Some(1), unit: Some(0), ..base }, Tile { owner: Some(2), ..base}],
+                                       &[Tile { owner: Some(1), unit: Some(1), ..base }, Tile { owner: Some(2), ..base}]]);
+        let map = Map { name: "Test".into(), units, tiles, funds: 0 };
+        let mut game = Game::new(map, &[1, 2]);
+        start(&mut game, &mut |_| ()).unwrap();
+
+        let mut events = Vec::new();
+        let emit = &mut |e| events.push(e);
+
+        move_and_attack(&mut game, 0, &path(&[(0, 0)]), 1, emit).unwrap();
+
+        assert_eq!(events, vec![
+                   Event::Move(0, path(&[(0, 0)])),
+                   Event::Attack(0, 1, 25), // Rifle on infantry in base at range 1
+                   Event::Counterattack(1, 0, 18), // Rifle with 75% health on infantry in base at range 1
+                   ]);
+
+    }
 }
