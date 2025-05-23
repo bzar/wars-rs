@@ -198,9 +198,9 @@ impl Game {
 
             fn to_char(x: u32) -> char {
                 match x {
-                    0..=9 => ('0' as u8 + x as u8) as char,
-                    10..=35 => ('a' as u8 + x as u8) as char,
-                    36..=61 => ('A' as u8 + x as u8) as char,
+                    0..=9 => (b'0' + x as u8) as char,
+                    10..=35 => (b'a' + x as u8) as char,
+                    36..=61 => (b'A' + x as u8) as char,
                     _ => '?'
                 }
             }
@@ -208,26 +208,33 @@ impl Game {
                 let x = (6 * (t.x - x0) + 4) as usize;
                 let y = (2 * (t.x - x0) + 4 * (t.y - y0) + 2) as usize;
                 let unit = t.unit.map(|u| self.units.get_ref(&u).unwrap());
-                buffer[y][x] = unit.map(|u| to_char(u.unit_type as u32)).unwrap_or(' ');
-                buffer[y-0][x-1] = match unit {
-                    Some(&Unit { owner: Some(owner), .. }) => to_char(owner),
-                    _ => ' '
-                };
-                buffer[y+1][x-1] = t.owner.as_ref().map(|&o| to_char(o)).unwrap_or(' ');
 
-                buffer[y+1][x-0] = to_char(t.terrain as u32);
-                buffer[y-2][x-2] = '·';
-                buffer[y+2][x-2] = '·';
-                buffer[y-2][x+2] = '·';
-                buffer[y+2][x+2] = '·';
-                buffer[y-1][x-3] = '/';
-                buffer[y+1][x-3] = '\\';
-                buffer[y-1][x+3] = '\\';
-                buffer[y+1][x+3] = '/';
-                buffer[y-0][x-4] = '·';
-                buffer[y-0][x+4] = '·';
-                buffer[y-2][x-0] = '-';
-                buffer[y+2][x-0] = '-';
+                //   432101234
+                //-2   ·---·   
+                //-1  /     \ 
+                // 0 ·  OU   ·
+                //+1  \ ot  / 
+                //+2   ·---·   
+
+                let uty = unit.map(|u| to_char(u.unit_type as u32)).unwrap_or(' ');
+                let uow = unit.map(|u| u.owner.map(to_char)).flatten().unwrap_or(' ');
+                let ter = to_char(t.terrain as u32);
+                let tow = t.owner.map(|o| to_char(o.clone())).unwrap_or(' ');
+                let tile: [[char; 9]; 5] =
+                    [[' ', ' ',  '·', '-', '-', '-', '·', ' ',  ' '],
+                     [' ', '/',  ' ', ' ', ' ', ' ', ' ', '\\', ' '],
+                     ['·', ' ',  ' ', uow, uty, ' ', ' ', ' ',  '·'],
+                     [' ', '\\', ' ', tow, ter, ' ', ' ', '/',  ' '],
+                     [' ', ' ',  '·', '-', '-', '-', '·', ' ',  ' ']];
+                tile.iter().enumerate().for_each(|(dy, row)| {
+                    let y = y + dy - tile.len() / 2;
+                    row.iter().enumerate().for_each(|(dx, &cell)| {
+                        let x = x + dx - row.len() / 2;
+                        if cell != ' ' {
+                            buffer[y][x] = cell;
+                        }
+                    })
+                });
             }
 
             // Map each row vector into a string, filter empty lines

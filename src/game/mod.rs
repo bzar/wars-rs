@@ -1,17 +1,17 @@
-use std::collections::HashMap;
-use crate::model;
 use crate::auth;
+use crate::model;
+use std::collections::HashMap;
 
-mod game;
-mod unit;
-mod tile;
-mod map;
 pub mod action;
-pub use self::game::*;
-pub use self::unit::*;
-pub use self::tile::*;
-pub use self::map::*;
+mod game;
+mod map;
+mod tile;
+mod unit;
 pub use self::action::*;
+pub use self::game::*;
+pub use self::map::*;
+pub use self::tile::*;
+pub use self::unit::*;
 pub use model::UnitType;
 
 pub type UnitId = usize;
@@ -24,14 +24,18 @@ pub type Credits = u32;
 pub type CapturePoints = u32;
 
 #[derive(PartialEq)]
-pub enum GameState { Pregame = 0, InProgress, Finished }
+pub enum GameState {
+    Pregame = 0,
+    InProgress,
+    Finished,
+}
 
 pub struct Tiles(HashMap<TileId, Tile>);
 pub struct Units(HashMap<UnitId, Unit>);
 pub struct Players(Vec<Player>);
 
-#[derive(Clone,Debug,PartialEq)]
-pub struct Position(i32, i32);
+#[derive(Clone, Debug, PartialEq)]
+pub struct Position(pub i32, pub i32);
 
 pub struct Game {
     pub state: GameState,
@@ -41,7 +45,7 @@ pub struct Game {
     pub in_turn_index: usize,
     pub round_count: u32,
     pub turn_count: u32,
-    pub next_unit_id: UnitId
+    pub next_unit_id: UnitId,
 }
 
 #[derive(Clone)]
@@ -50,7 +54,7 @@ pub struct Player {
     pub number: PlayerNumber,
     pub funds: Credits,
     pub score: u32,
-    pub alive: bool
+    pub alive: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -61,10 +65,10 @@ pub struct Tile {
     pub capture_points: CapturePoints,
     pub unit: Option<UnitId>,
     pub x: i32,
-    pub y: i32
+    pub y: i32,
 }
 
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct Unit {
     pub unit_type: model::UnitType,
     pub health: Health,
@@ -72,35 +76,47 @@ pub struct Unit {
     pub owner: Option<PlayerNumber>,
     pub deployed: bool,
     pub moved: bool,
-    pub capturing: bool
+    pub capturing: bool,
 }
 
 pub struct Map {
     pub name: String,
     pub units: HashMap<UnitId, Unit>,
     pub tiles: HashMap<TileId, Tile>,
-    pub funds: u32
+    pub funds: u32,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum ActionError {
     InternalError,
-    UnitNotFound, OwnerNotInTurn, UnitAlreadyMoved, GameNotInProgress, InvalidPath,
-    UnitNotOnMap, GameAlreadyStarted, CannotCapture, CannotDeploy, CannotUndeploy,
-    CannotLoad, CannotUnload, CannotBuild, InsufficientFunds, CannotAttack
+    UnitNotFound,
+    OwnerNotInTurn,
+    UnitAlreadyMoved,
+    GameNotInProgress,
+    InvalidPath,
+    UnitNotOnMap,
+    GameAlreadyStarted,
+    CannotCapture,
+    CannotDeploy,
+    CannotUndeploy,
+    CannotLoad,
+    CannotUnload,
+    CannotBuild,
+    InsufficientFunds,
+    CannotAttack,
 }
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum GameUpdateError {
     InvalidStateTransition,
     InvalidPlayerNumber,
     InvalidUnitId,
-    InvalidTileId
+    InvalidTileId,
 }
 pub type GameUpdateResult<T> = Result<T, GameUpdateError>;
 pub type ActionResult<T> = Result<T, ActionError>;
 
-#[derive(Debug,PartialEq)]
+#[derive(Debug, PartialEq)]
 pub enum Event {
     StartTurn(PlayerNumber),
     EndTurn(PlayerNumber),
@@ -121,5 +137,4 @@ pub enum Event {
     Captured(UnitId, TileId),
     Build(TileId, UnitId, UnitType, Credits),
     TileCapturePointRegen(TileId, CapturePoints),
-
 }

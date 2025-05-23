@@ -1,0 +1,51 @@
+[package]
+name = "wars-bevy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wars = { path = ".." }
+serde = "1.0.219"
+serde_json = "1.0.140"
+serde_derive = "1.0.219"
+derive_more = { version = "2.0.1", features = ["deref"] }
+
+[dependencies.bevy]
+version = "0.16.0"
+default-features = false
+features = [
+  "dynamic_linking",
+  "bevy_asset",
+  "bevy_core_pipeline",
+  "bevy_render",
+  "bevy_sprite",
+  "bevy_state",
+  "bevy_text",
+  "bevy_image",
+  "bevy_window",
+  "bevy_ui",
+  "bevy_log",
+  "bevy_animation",
+  "multi_threaded",
+  "std",
+  "wayland",
+  "png",
+]
+
+[profile.release]
+opt-level = "z"
+strip = "symbols"
+lto = "fat"
+codegen-units = 1
+panic = 'abort'
+
+[profile.release.package."*"]
+opt-level = "z"
+strip = "symbols"
+codegen-units = 1
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
