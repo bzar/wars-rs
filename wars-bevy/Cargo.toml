@@ -22,6 +22,8 @@ features = [
   "bevy_state",
   "bevy_text",
   "bevy_image",
+  "bevy_picking",
+  "bevy_sprite_picking_backend",
   "bevy_window",
   "bevy_ui",
   "bevy_log",

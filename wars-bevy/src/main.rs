@@ -37,29 +37,21 @@ struct EventProcessor {
 fn main() {
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
     const THEME_JSON: &str = include_str!("../assets/settings.json");
-    let map = wars::game::Map::from_json(THIRD_PARTY_MAP).unwrap();
-    let game = wars::game::Game::new(map, &[0, 1]);
     let theme: theme::Theme = theme::Theme::from_json(THEME_JSON).unwrap();
-    let queue = vec![wars::game::Event::Move(
-        222,
-        vec![
-            wars::game::Position(0, 1),
-            wars::game::Position(1, 1),
-            wars::game::Position(3, 1),
-            wars::game::Position(5, 5),
-        ],
-    )];
+    let map = wars::game::Map::from_json(THIRD_PARTY_MAP).unwrap();
+    let mut game = wars::game::Game::new(map, &[0, 1]);
+
+    let mut event_processor = EventProcessor::default();
+    wars::game::action::start(&mut game, &mut |e| event_processor.queue.push(e))
+        .expect("Could not start game");
     App::new()
-        .add_plugins(DefaultPlugins)
+        .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .insert_resource(Game(game))
         .insert_resource(Theme(theme))
         .insert_resource(SpriteSheet::default())
-        .insert_resource(EventProcessor {
-            queue,
-            ..Default::default()
-        })
+        .insert_resource(event_processor)
         .add_systems(Startup, setup)
-        .add_systems(Update, (input, event_processor))
+        .add_systems(Update, (map_movement_input_system, event_processor_system))
         .run();
 }
 
@@ -104,11 +96,13 @@ fn setup(
                 .spawn((
                     tile_bundle(*tile_id, tile, &theme, &sprite_sheet),
                     Transform::from_xyz(pos.x, pos.y, -pos.y),
+                    Pickable::default(),
                 ))
+                .observe(tile_click_observer)
                 .id();
             if let Some(prop_index) = theme_tile.prop_index {
                 let (ox, oy) = theme.hex_sprite_center_offset();
-                let tile_sprite = commands.spawn((
+                commands.spawn((
                     prop_bundle(*tile_id, tile, &theme, &sprite_sheet),
                     ChildOf(tile_sprite),
                     Transform::from_xyz(ox as f32, oy as f32, 0.0),
@@ -120,13 +114,21 @@ fn setup(
                 let theme_unit = theme.unit(unit).unwrap();
                 commands.spawn((
                     unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                    Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, -pos.y + 0.1),
+                    Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, 0.2 - pos.y),
                 ));
             }
         }
     }
 }
 
+fn tile_click_observer(trigger: Trigger<Pointer<Click>>, tile_query: Query<&Tile>) {
+    info!("{trigger:?}");
+    if let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) {
+        info!("clicked {tile_id}");
+    } else {
+        info!("{}", trigger.target());
+    }
+}
 fn unit_bundle(
     unit_id: wars::game::UnitId,
     unit: &wars::game::Unit,
@@ -184,14 +186,14 @@ fn prop_bundle(
     )
 }
 
-fn input(
+fn map_movement_input_system(
     mut camera_query: Single<(&mut Camera, &mut Transform, &mut Projection)>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mouse_motion: Res<bevy::input::mouse::AccumulatedMouseMotion>,
     mouse_scroll: Res<bevy::input::mouse::AccumulatedMouseScroll>,
 ) {
     let (camera, mut transform, mut projection) = camera_query.into_inner();
-    if mouse_buttons.pressed(MouseButton::Left) {
+    if mouse_buttons.pressed(MouseButton::Right) {
         let delta = mouse_motion.delta;
         transform.translation.x -= delta.x;
         transform.translation.y += delta.y;
@@ -209,7 +211,7 @@ fn input(
     }
 }
 
-fn event_processor(
+fn event_processor_system(
     mut commands: Commands,
     mut ep: ResMut<EventProcessor>,
     theme: Res<Theme>,
@@ -238,51 +240,92 @@ fn event_processor(
         None
     };
 
-    use bevy::animation::{AnimationTarget, AnimationTargetId, animated_field};
     if ep.state.is_none() {
         if let Some(event) = ep.queue.pop() {
             use wars::game::Event::*;
             ep.state = match event {
+                //StartTurn(player_number) => None,
+                //EndTurn(player_number) => None,
+                //Funds(player_number, credits) => None,
+                //UnitRepair(unit_id, health) => None,
+                //WinGame(player_number) => None,
+                //Surrender(player_number) => None,
                 Move(unit_id, path) => {
                     let unit = units
                         .iter()
                         .find_map(|(entity, Unit(uid))| (*uid == unit_id).then_some(entity))
                         .unwrap();
                     let mut unit = commands.entity(unit);
-                    let mut animation = AnimationClip::default();
-                    let target_name = Name::new("unit");
-                    let animation_target_id = AnimationTargetId::from_name(&target_name);
-                    let waypoints: Vec<Vec3> = path
-                        .into_iter()
-                        .map(|wars::game::Position(x, y)| {
-                            let (x, y) = theme.map_hex_center(x, y);
-                            Vec3::new(x as f32, y as f32, -y as f32)
-                        })
-                        .collect();
-                    info!("waypoints: {waypoints:?}");
-                    animation.add_curve_to_target(
-                        animation_target_id,
-                        AnimatableCurve::new(
-                            animated_field!(Transform::translation),
-                            SampleAutoCurve::new(Interval::new(0.0, 3.0).unwrap(), waypoints)
-                                .unwrap(),
-                        ),
-                    );
-                    let (graph, animation_index) =
-                        AnimationGraph::from_clip(animations.add(animation));
-                    let mut animation_player = AnimationPlayer::default();
-                    animation_player.play(animation_index);
-                    unit.insert(target_name);
-                    unit.insert(AnimationGraphHandle(graphs.add(graph)));
-                    unit.insert(animation_player);
-                    unit.insert(AnimationTarget {
-                        id: animation_target_id,
-                        player: unit.id(),
-                    });
+                    let info = move_animation(path, &theme, &mut animations, &mut graphs);
+                    unit.insert((
+                        info.target_name,
+                        AnimationGraphHandle(info.graph),
+                        info.player,
+                        AnimationTarget {
+                            id: info.target_id,
+                            player: unit.id(),
+                        },
+                    ));
                     Some(EventProcess::Animation(unit.id()))
                 }
+                //Wait(unit_id) => None,
+                //Attack(attacking_unit_id, target_unit_id, health) => None,
+                //Counterattack(attacking_unit_id, target_unit_id, health) => None,
+                //Destroyed(attacking_unit_id, target_unit_id) => None,
+                //Deploy(unit_id) => None,
+                //Undeploy(unit_id) => None,
+                //Load(loaded_unit_id, loading_unit_id) => None,
+                //Unload(unloading_unit_id, unloaded_unit_id, position) => None,
+                //Capture(unit_id, tile_id, capture_points) => None,
+                //Captured(unit_id, tile_id) => None,
+                //Build(tile_id, unit_id, unit_type, credits) => None,
+                //TileCapturePointRegen(tile_id, capture_points) => None,
                 e => Some(EventProcess::NoOp(e)),
             };
         }
+    }
+}
+
+use bevy::animation::{AnimationTarget, AnimationTargetId, animated_field};
+struct AnimationInfo {
+    target_name: Name,
+    target_id: AnimationTargetId,
+    graph: Handle<AnimationGraph>,
+    player: AnimationPlayer,
+}
+fn move_animation(
+    path: impl IntoIterator<Item = wars::game::Position>,
+    theme: &Theme,
+    animations: &mut ResMut<Assets<AnimationClip>>,
+    graphs: &mut ResMut<Assets<AnimationGraph>>,
+) -> AnimationInfo {
+    let mut animation = AnimationClip::default();
+    let target_name = Name::new("unit");
+    let target_id = AnimationTargetId::from_name(&target_name);
+    let (ox, oy) = theme.hex_sprite_center_offset();
+    let waypoints: Vec<Vec3> = path
+        .into_iter()
+        .map(|wars::game::Position(hx, hy)| {
+            let (x, y) = theme.map_hex_center(hx, hy);
+            Vec3::new((x + ox) as f32, (y + oy) as f32, -2.0 * y as f32)
+        })
+        .collect();
+    animation.add_curve_to_target(
+        target_id,
+        AnimatableCurve::new(
+            animated_field!(Transform::translation),
+            SampleAutoCurve::new(Interval::new(0.0, 3.0).unwrap(), waypoints).unwrap(),
+        ),
+    );
+    let (graph, animation_index) = AnimationGraph::from_clip(animations.add(animation));
+    let graph = graphs.add(graph);
+    let mut player = AnimationPlayer::default();
+    player.play(animation_index).repeat();
+
+    AnimationInfo {
+        target_name,
+        target_id,
+        graph,
+        player,
     }
 }
