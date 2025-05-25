@@ -196,11 +196,11 @@ impl Theme {
         self.damage_numbers.get(number)
     }
 
-    pub fn map_hex_center(&self, x: i32, y: i32) -> (i32, i32) {
+    pub fn map_hex_center(&self, x: i32, y: i32) -> (i32, i32, i32) {
         let w = self.spec.hex.width as i32;
         let h = self.spec.hex.height as i32;
         let tw = self.spec.hex.tri_width as i32;
-        (w / 2 + (w - tw) * x, -(x + 1) * h / 2 + h * -y)
+        (w / 2 + (w - tw) * x, -(x + 1) * h / 2 + h * -y, 2 * y + x)
     }
 
     pub fn hex_sprite_center_offset(&self) -> (i32, i32) {

@@ -28,6 +28,7 @@ features = [
   "bevy_ui",
   "bevy_log",
   "bevy_animation",
+  "default_font",
   "multi_threaded",
   "std",
   "wayland",
