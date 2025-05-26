@@ -16,6 +16,17 @@ struct SpriteSheet {
     layout: Handle<TextureAtlasLayout>,
 }
 
+impl SpriteSheet {
+    fn sprite(&self, index: usize) -> Sprite {
+        Sprite::from_atlas_image(
+            self.texture.clone(),
+            TextureAtlas {
+                layout: self.layout.clone(),
+                index,
+            },
+        )
+    }
+}
 #[derive(Component)]
 struct Tile(wars::game::TileId);
 
@@ -41,6 +52,15 @@ struct EndTurnButton;
 #[derive(Component)]
 struct TopBar;
 
+#[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
+enum MapAction {
+    Wait,
+    Attack,
+    Deploy,
+    Undeploy,
+    Cancel,
+}
+
 #[derive(Resource, Default)]
 enum MapInteractionState {
     #[default]
@@ -49,14 +69,25 @@ enum MapInteractionState {
         wars::game::UnitId,
         HashMap<wars::game::Position, Vec<wars::game::Position>>,
     ),
-    //SelectAttackTarget(wars::game::UnitId, wars::game::Position)
+    SelectAction(
+        wars::game::UnitId,
+        Vec<wars::game::Position>,
+        HashSet<MapAction>,
+        HashSet<wars::game::UnitId>,
+    ),
+    SelectAttackTarget(
+        wars::game::UnitId,
+        Vec<wars::game::Position>,
+        HashSet<wars::game::UnitId>,
+    ),
 }
 
 #[derive(Event)]
 enum HighlightEvent {
     Nothing,
     MoveOptions(HashSet<wars::game::TileId>),
-    //AttackOptions(Vec<wars::game::UnitId>),
+    AttackOptions(HashSet<wars::game::UnitId>),
+    ShowActionButtons(HashSet<MapAction>),
 }
 
 #[derive(Event)]
@@ -92,6 +123,7 @@ fn main() {
                 end_turn_button_system,
                 highlight_event_system,
                 unit_event_system,
+                map_action_button_system,
             ),
         )
         .run();
@@ -170,30 +202,57 @@ fn setup(
             ..Default::default()
         },
         BackgroundColor(Color::BLACK),
-        children![(
-            Button,
-            EndTurnButton,
-            Node {
-                width: Val::Px(128.0),
-                height: Val::Percent(100.0),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                ..default()
-            },
-            BackgroundColor(Color::WHITE),
-            children![(
-                Text::new("End turn"),
-                TextFont {
-                    //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                    font_size: 24.0,
-                    ..default()
-                },
-                TextColor(Color::BLACK),
-            )]
-        )],
+        children![
+            (button_bundle("End turn"), EndTurnButton,),
+            (button_bundle("Wait"), MapAction::Wait, Visibility::Hidden),
+            (
+                button_bundle("Attack"),
+                MapAction::Attack,
+                Visibility::Hidden
+            ),
+            (
+                button_bundle("Deploy"),
+                MapAction::Deploy,
+                Visibility::Hidden
+            ),
+            (
+                button_bundle("Undeploy"),
+                MapAction::Undeploy,
+                Visibility::Hidden
+            ),
+            (
+                button_bundle("Cancel"),
+                MapAction::Cancel,
+                Visibility::Hidden
+            ),
+        ],
     ));
 }
 
+fn button_bundle(text: &str) -> impl Bundle {
+    (
+        Button,
+        Node {
+            width: Val::Px(128.0),
+            height: Val::Percent(100.0),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            border: UiRect::all(Val::Px(2.0)),
+            ..default()
+        },
+        BackgroundColor(Color::WHITE.with_alpha(0.5)),
+        BorderColor(Color::BLACK.with_alpha(0.9)),
+        children![(
+            Text::new(text),
+            TextFont {
+                //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 24.0,
+                ..default()
+            },
+            TextColor(Color::BLACK),
+        )],
+    )
+}
 fn end_turn_button_system(
     end_turn_buttons: Query<
         &Interaction,
@@ -220,14 +279,14 @@ fn unit_event_system(mut events: EventReader<UnitEvent>, mut units: Query<(&mut 
             UnitEvent::ReadyToMove(unit_id) => {
                 for (mut sprite, Unit(uid)) in units.iter_mut() {
                     if unit_id == uid {
-                        sprite.color = Color::WHITE;
+                        sprite.flip_y = false;
                     }
                 }
             }
             UnitEvent::Moved(unit_id) => {
                 for (mut sprite, Unit(uid)) in units.iter_mut() {
                     if unit_id == uid {
-                        sprite.color = Color::srgba(0.7, 0.7, 0.7, 0.9);
+                        sprite.flip_y = true;
                     }
                 }
             }
@@ -236,8 +295,10 @@ fn unit_event_system(mut events: EventReader<UnitEvent>, mut units: Query<(&mut 
 }
 fn highlight_event_system(
     mut events: EventReader<HighlightEvent>,
-    mut tiles: Query<(&mut Sprite, &Tile), Without<Prop>>,
-    mut props: Query<(&mut Sprite, &Prop), Without<Tile>>,
+    mut units: Query<(&mut Sprite, &Unit), (Without<Tile>, Without<Prop>)>,
+    mut tiles: Query<(&mut Sprite, &Tile), (Without<Prop>, Without<Unit>)>,
+    mut props: Query<(&mut Sprite, &Prop), (Without<Tile>, Without<Unit>)>,
+    mut action_button_visibility: Query<(&MapAction, &mut Visibility), With<Button>>,
 ) {
     for event in events.read() {
         match event {
@@ -247,6 +308,9 @@ fn highlight_event_system(
                     sprite.color = Color::WHITE;
                 }
                 for (mut sprite, _) in props.iter_mut() {
+                    sprite.color = Color::WHITE;
+                }
+                for (mut sprite, _) in units.iter_mut() {
                     sprite.color = Color::WHITE;
                 }
             }
@@ -263,13 +327,77 @@ fn highlight_event_system(
                     }
                 }
             }
+            HighlightEvent::AttackOptions(unit_ids) => {
+                for (mut sprite, Unit(unit_id)) in units.iter_mut() {
+                    if unit_ids.contains(unit_id) {
+                        sprite.color = Color::srgba(1.0, 0.1, 0.1, 1.0);
+                    }
+                }
+            }
+            HighlightEvent::ShowActionButtons(actions) => {
+                for (action, mut visibility) in action_button_visibility.iter_mut() {
+                    *visibility = if actions.contains(action) {
+                        Visibility::Visible
+                    } else {
+                        Visibility::Hidden
+                    };
+                }
+            }
         }
+    }
+}
+fn map_action_button_system(
+    action_buttons: Query<(&Interaction, &MapAction), (Changed<Interaction>, With<Button>)>,
+    game: ResMut<Game>,
+    mut state: ResMut<MapInteractionState>,
+    mut event_processor: ResMut<EventProcessor>,
+    mut highlight_event_writer: EventWriter<HighlightEvent>,
+) {
+    let MapInteractionState::SelectAction(unit_id, ref path, ref options, ref attack_options) =
+        *state
+    else {
+        return;
+    };
+    let game = &mut game.into_inner().0;
+    let mut next_state = None;
+    for (interaction, action) in action_buttons.iter() {
+        if *interaction == Interaction::Pressed && options.contains(action) {
+            info!("Pressed action {action:?}");
+            match action {
+                MapAction::Wait => {
+                    wars::game::action::move_and_wait(game, unit_id, &path, &mut |e| {
+                        event_processor.queue.push_back(e)
+                    })
+                    .expect("Could not move unit");
+                    highlight_event_writer.write(HighlightEvent::ShowActionButtons(HashSet::new()));
+                    next_state = Some(MapInteractionState::Normal);
+                }
+                MapAction::Cancel => {
+                    next_state = Some(MapInteractionState::Normal);
+                    highlight_event_writer.write(HighlightEvent::ShowActionButtons(HashSet::new()));
+                }
+                MapAction::Attack => {
+                    next_state = Some(MapInteractionState::SelectAttackTarget(
+                        unit_id,
+                        path.clone(),
+                        attack_options.clone(),
+                    ));
+                    highlight_event_writer
+                        .write(HighlightEvent::AttackOptions(attack_options.clone()));
+                }
+                _ => unimplemented!(),
+            }
+        }
+    }
+
+    if let Some(next_state) = next_state {
+        *state = next_state;
     }
 }
 fn tile_click_observer(
     trigger: Trigger<Pointer<Click>>,
     tile_query: Query<&Tile>,
-    game: ResMut<Game>,
+    mut game: ResMut<Game>,
     mut state: ResMut<MapInteractionState>,
     mut event_processor: ResMut<EventProcessor>,
     mut highlight_event_writer: EventWriter<HighlightEvent>,
@@ -280,7 +408,10 @@ fn tile_click_observer(
         return;
     };
     let tile = game.tiles.get(*tile_id).unwrap();
+    let position = wars::game::Position(tile.x, tile.y);
     info!("{tile:?}");
+
+    let mut next_state = None;
     match *state {
         MapInteractionState::Normal => {
             if let Some(unit_id) = tile.unit {
@@ -298,26 +429,63 @@ fn tile_click_observer(
                                 })
                                 .collect(),
                         ));
-                        *state = MapInteractionState::SelectDestination(unit_id, destinations);
+                        next_state = Some(MapInteractionState::SelectDestination(
+                            unit_id,
+                            destinations,
+                        ))
                     }
                 }
             }
         }
         MapInteractionState::SelectDestination(unit_id, ref destinations) => {
             info!("Moving unit {unit_id} to {},{}", tile.x, tile.y);
-            if let Some(path) = destinations.get(&wars::game::Position(tile.x, tile.y)) {
-                wars::game::action::move_and_wait(
-                    &mut game.into_inner().0,
-                    unit_id,
-                    &path,
-                    &mut |e| event_processor.queue.push_back(e),
-                )
-                .expect("Could not move unit");
-            }
             highlight_event_writer.write(HighlightEvent::Nothing);
-            *state = MapInteractionState::Normal;
+            if let Some(path) = destinations.get(&position) {
+                let mut action_options: HashSet<MapAction> =
+                    [MapAction::Wait, MapAction::Cancel].into_iter().collect();
+                let attack_options = game.unit_attack_options(unit_id, &position);
+                info!("attack options: {attack_options:?}");
+                if !attack_options.is_empty() {
+                    action_options.insert(MapAction::Attack);
+                }
+                highlight_event_writer
+                    .write(HighlightEvent::ShowActionButtons(action_options.clone()));
+                next_state = Some(MapInteractionState::SelectAction(
+                    unit_id,
+                    path.clone(),
+                    action_options,
+                    attack_options,
+                ));
+            } else {
+                next_state = Some(MapInteractionState::Normal);
+            }
+        }
+        MapInteractionState::SelectAction(
+            unit_id,
+            ref path,
+            ref action_options,
+            ref attack_options,
+        ) => {}
+        MapInteractionState::SelectAttackTarget(unit_id, ref path, ref attack_options) => {
+            if let Ok((_, target_tile)) = game.tiles.get_at(&position) {
+                if let Some(target_id) = target_tile.unit {
+                    highlight_event_writer.write(HighlightEvent::Nothing);
+                    wars::game::action::move_and_attack(
+                        &mut game.into_inner().0,
+                        unit_id,
+                        path,
+                        target_id,
+                        &mut |e| event_processor.queue.push_back(e),
+                    )
+                    .expect("Could not move unit");
+                    next_state = Some(MapInteractionState::Normal);
+                }
+            }
         }
     };
+    if let Some(next_state) = next_state {
+        *state = next_state;
+    }
 }
 fn unit_bundle(
     unit_id: wars::game::UnitId,
@@ -326,16 +494,7 @@ fn unit_bundle(
     sprite_sheet: &SpriteSheet,
 ) -> impl Bundle {
     let theme_unit = theme.unit(unit).unwrap();
-    (
-        Unit(unit_id),
-        Sprite::from_atlas_image(
-            sprite_sheet.texture.clone(),
-            TextureAtlas {
-                layout: sprite_sheet.layout.clone(),
-                index: theme_unit.unit_index,
-            },
-        ),
-    )
+    (Unit(unit_id), sprite_sheet.sprite(theme_unit.unit_index))
 }
 
 fn tile_bundle(
@@ -345,16 +504,7 @@ fn tile_bundle(
     sprite_sheet: &SpriteSheet,
 ) -> impl Bundle {
     let theme_tile = theme.tile(tile).unwrap();
-    (
-        Tile(tile_id),
-        Sprite::from_atlas_image(
-            sprite_sheet.texture.clone(),
-            TextureAtlas {
-                layout: sprite_sheet.layout.clone(),
-                index: theme_tile.tile_index,
-            },
-        ),
-    )
+    (Tile(tile_id), sprite_sheet.sprite(theme_tile.tile_index))
 }
 
 fn prop_bundle(
@@ -366,13 +516,7 @@ fn prop_bundle(
     let theme_tile = theme.tile(tile).unwrap();
     (
         Prop(tile_id),
-        Sprite::from_atlas_image(
-            sprite_sheet.texture.clone(),
-            TextureAtlas {
-                layout: sprite_sheet.layout.clone(),
-                index: theme_tile.prop_index.unwrap(),
-            },
-        ),
+        sprite_sheet.sprite(theme_tile.prop_index.unwrap()),
     )
 }
 
@@ -423,6 +567,12 @@ fn event_processor_system(
                 let player = players.get(entity).unwrap();
                 if player.all_finished() {
                     info!("Finished animation");
+                    commands.entity(entity).remove::<(
+                        Name,
+                        AnimationPlayer,
+                        AnimationGraphHandle,
+                        AnimationTarget,
+                    )>();
                     None
                 } else {
                     Some(EventProcess::Animation(entity))
@@ -462,22 +612,28 @@ fn event_processor_system(
                 //WinGame(player_number) => None,
                 //Surrender(player_number) => None,
                 Move(unit_id, path) => {
-                    let unit = units
-                        .iter()
-                        .find_map(|(entity, Unit(uid))| (*uid == unit_id).then_some(entity))
-                        .unwrap();
-                    let mut unit = commands.entity(unit);
-                    let info = move_animation(path, &theme, &mut animations, &mut graphs);
-                    unit.insert((
-                        info.target_name,
-                        AnimationGraphHandle(info.graph),
-                        info.player,
-                        AnimationTarget {
-                            id: info.target_id,
-                            player: unit.id(),
-                        },
-                    ));
-                    Some(EventProcess::Animation(unit.id()))
+                    if path.len() > 1 {
+                        let unit_entity_id = units
+                            .iter()
+                            .find_map(|(entity_id, Unit(uid))| {
+                                (*uid == unit_id).then_some(entity_id)
+                            })
+                            .unwrap();
+                        let mut unit = commands.entity(unit_entity_id);
+                        let info = move_animation(path, &theme, &mut animations, &mut graphs);
+                        unit.insert((
+                            info.target_name,
+                            AnimationGraphHandle(info.graph),
+                            info.player,
+                            AnimationTarget {
+                                id: info.target_id,
+                                player: unit.id(),
+                            },
+                        ));
+                        Some(EventProcess::Animation(unit.id()))
+                    } else {
+                        None
+                    }
                 }
                 Wait(unit_id) => {
                     unit_event_writer.write(UnitEvent::Moved(unit_id));
@@ -485,7 +641,17 @@ fn event_processor_system(
                 }
                 //Attack(attacking_unit_id, target_unit_id, health) => None,
                 //Counterattack(attacking_unit_id, target_unit_id, health) => None,
-                //Destroyed(attacking_unit_id, target_unit_id) => None,
+                Destroyed(attacking_unit_id, target_unit_id) => {
+                    let unit_entity_id = units
+                        .iter()
+                        .find_map(|(entity_id, Unit(uid))| {
+                            (*uid == target_unit_id).then_some(entity_id)
+                        })
+                        .unwrap();
+                    commands.entity(unit_entity_id).despawn();
+
+                    None
+                }
                 //Deploy(unit_id) => None,
                 //Undeploy(unit_id) => None,
                 //Load(loaded_unit_id, loading_unit_id) => None,

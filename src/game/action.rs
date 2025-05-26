@@ -287,25 +287,26 @@ pub fn move_and_wait(
     Ok(())
 }
 
-fn calculate_attack_damage(
+pub fn calculate_attack_damage(
     attacker: &Unit,
     target: &Unit,
     distance: u32,
     target_terrain: Terrain,
 ) -> Option<u32> {
+    if attacker.owner == target.owner {
+        return None;
+    }
     let target_armor = unit_type(target.unit_type).armor_type;
     let defense = attacker.defense_in_terrain(target_terrain);
     attacker
         .unit_type_data()
         .weapons
         .iter()
-        .map(|&w| weapon(dbg!(w)))
+        .map(|&w| weapon(w))
         .filter(|w| !w.require_deployed || attacker.deployed)
         .filter_map(|w| (w.range_map)(distance).map(|efficiency| (w, dbg!(efficiency))))
         .filter_map(|(w, efficiency)| (w.power_map)(target_armor).map(|power| (efficiency, power)))
-        .map(|(efficiency, power)| {
-            dbg!(attacker.health * power * efficiency * defense) / (100_00_00)
-        })
+        .map(|(efficiency, power)| attacker.health * power * efficiency * defense / (100_00_00))
         .max()
         .map(|damage| damage.max(1))
 }
@@ -320,6 +321,7 @@ pub fn move_and_attack(
         try_move(game, unit_id, path)?;
 
     let mut target = game.units.get(target_id).ok_or(ActionError::UnitNotFound)?;
+
     let (target_tile_id, mut target_tile) = game
         .tiles
         .get_unit_tile(target_id)
@@ -358,6 +360,10 @@ pub fn move_and_attack(
         }
 
         game.units.update(target_id, target)?;
+    }
+
+    if let Some(unit_id) = dst_tile.unit {
+        emit(Event::Wait(unit_id));
     }
 
     game.update_tiles_and_units(

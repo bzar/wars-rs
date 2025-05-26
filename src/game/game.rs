@@ -393,7 +393,10 @@ impl Game {
                     next_path.push(Position(x, y));
                     queue.push_back(next_path);
                 }
-                result.insert(destination.clone(), path);
+
+                if self.unit_can_stay_at(unit_id, &destination).is_ok() {
+                    result.insert(destination.clone(), path);
+                }
             }
         }
         Some(result)
@@ -406,6 +409,30 @@ impl Game {
         }
 
         Ok(())
+    }
+    pub fn unit_can_attack_target(
+        &self,
+        attacker_id: &UnitId,
+        target_id: &UnitId,
+        attack_from: &Position,
+    ) -> Option<bool> {
+        let attacker = self.units.get_ref(attacker_id)?;
+        let target = self.units.get_ref(target_id)?;
+        let (_, target_tile) = self.tiles.get_unit_tile(*target_id)?;
+        let distance = attack_from.distance_to(&Position(target_tile.x, target_tile.y));
+        let damage =
+            action::calculate_attack_damage(attacker, target, distance, target_tile.terrain);
+        Some(damage.is_some())
+    }
+    pub fn unit_attack_options(&self, unit_id: UnitId, attack_from: &Position) -> HashSet<UnitId> {
+        self.units
+            .iter_ids()
+            .filter(|target_id| {
+                self.unit_can_attack_target(&unit_id, target_id, attack_from)
+                    .unwrap_or(false)
+            })
+            .copied()
+            .collect()
     }
     pub fn in_turn_number(&self) -> Option<PlayerNumber> {
         match self.state {
