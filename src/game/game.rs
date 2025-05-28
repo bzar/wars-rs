@@ -320,6 +320,10 @@ impl Game {
             return Ok(());
         }
 
+        if unit.deployed {
+            return Err(ActionError::UnitIsDeployed);
+        }
+
         let (_, distance) = path
             .iter()
             .fold((None, 0), |(prev, total), pos| match prev {
@@ -433,6 +437,18 @@ impl Game {
             })
             .copied()
             .collect()
+    }
+    pub fn unit_can_capture_tile(&self, unit_id: UnitId, tile_id: TileId) -> ActionResult<()> {
+        let unit = self
+            .units
+            .get_ref(&unit_id)
+            .ok_or(ActionError::UnitNotFound)?;
+        let tile = self.tiles.get(tile_id).ok_or(ActionError::CannotCapture)?;
+        if !unit.can_capture() || !tile.is_capturable() || tile.owner == unit.owner {
+            return Err(ActionError::CannotCapture);
+        }
+
+        Ok(())
     }
     pub fn in_turn_number(&self) -> Option<PlayerNumber> {
         match self.state {

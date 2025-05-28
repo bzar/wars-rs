@@ -104,6 +104,8 @@ pub enum ActionError {
     CannotBuild,
     InsufficientFunds,
     CannotAttack,
+    UnitIsDeployed,
+    UnitIsNotDeployed,
 }
 
 #[derive(Debug, PartialEq)]
