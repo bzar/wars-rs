@@ -1,4 +1,4 @@
-use crate::game::{Tile, Unit, Health, Credits};
+use crate::game::{Credits, Health, Position, Tile, Unit};
 use crate::model::*;
 
 impl Default for Tile {
@@ -11,7 +11,7 @@ impl Default for Tile {
             x: 0,
             y: 0,
             unit: None,
-            capture_points: model::MAX_CAPTURE_POINTS
+            capture_points: model::MAX_CAPTURE_POINTS,
         }
     }
 }
@@ -44,6 +44,11 @@ impl Tile {
         self.has_terrain_flag(TerrainFlag::Capturable)
     }
     pub fn can_build(&self, target_type: UnitType) -> bool {
-        self.terrain_data().build_classes.contains(&unit_type(target_type).unit_class)
+        self.terrain_data()
+            .build_classes
+            .contains(&unit_type(target_type).unit_class)
+    }
+    pub fn position(&self) -> Position {
+        Position(self.x, self.y)
     }
 }
