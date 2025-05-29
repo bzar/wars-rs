@@ -401,7 +401,7 @@ pub fn move_and_capture(
     if unit.health >= dst_tile.capture_points {
         dst_tile.capture_points = 1;
         dst_tile.owner = unit.owner;
-        emit(Event::Captured(unit_id, dst_tile_id));
+        emit(Event::Captured(unit_id, dst_tile_id, unit.owner));
     } else {
         let new_tile_capture_points = dst_tile.capture_points - unit.health;
         dst_tile.capture_points = new_tile_capture_points;

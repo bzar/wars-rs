@@ -136,7 +136,7 @@ pub enum Event {
     Load(UnitId, UnitId),
     Unload(UnitId, UnitId, Position),
     Capture(UnitId, TileId, CapturePoints),
-    Captured(UnitId, TileId),
+    Captured(UnitId, TileId, Option<PlayerNumber>),
     Build(TileId, UnitId, UnitType, Credits),
     TileCapturePointRegen(TileId, CapturePoints),
 }

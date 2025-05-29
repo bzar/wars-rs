@@ -46,7 +46,12 @@ struct Deployed(bool);
 struct Moved(bool);
 
 #[derive(Component)]
-struct CapturePoints(u32);
+enum CaptureState {
+    Capturing(u32),
+    Recovering(u32),
+}
+#[derive(Component)]
+struct Owner(u32);
 
 enum EventProcess {
     NoOp(wars::game::Event),
@@ -108,12 +113,6 @@ enum HighlightEvent {
     HideActionButtons,
 }
 
-#[derive(Event)]
-enum TileEvent {
-    Capturing(Entity, Option<Entity>),
-    Recovering(Entity, Option<Entity>),
-    Captured(Entity, Option<Entity>),
-}
 fn main() {
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
     const THEME_JSON: &str = include_str!("../assets/settings.json");
@@ -132,7 +131,6 @@ fn main() {
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
         .add_event::<HighlightEvent>()
-        .add_event::<TileEvent>()
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -141,11 +139,11 @@ fn main() {
                 event_processor_system,
                 end_turn_button_system,
                 highlight_event_system,
-                tile_event_system,
                 map_action_button_system,
                 funds_display_system,
                 unit_deployed_emblem_system,
                 unit_moved_system,
+                tile_owner_system,
             ),
         )
         .run();
@@ -340,35 +338,18 @@ fn unit_moved_system(mut changed_moved: Query<(&Moved, &mut Sprite), Changed<Mov
         sprite.flip_y = *moved;
     }
 }
-fn tile_event_system(
+fn tile_owner_system(
     theme: Res<Theme>,
     game: Res<Game>,
-    mut events: EventReader<TileEvent>,
-    mut tiles: Query<&Tile>,
-    mut tile_sprites: Query<&mut Sprite, (With<Tile>, Without<Prop>)>,
-    mut prop_sprites: Query<&mut Sprite, (With<Prop>, Without<Tile>)>,
+    changed_owners: Query<&Owner, (With<Tile>, Changed<Owner>)>,
+    mut props: Query<(&Prop, &ChildOf, &mut Sprite)>,
 ) {
-    for event in events.read() {
-        match event {
-            TileEvent::Capturing(tile_entity_id, prop_entity_id) => {
-                unimplemented!()
-            }
-            TileEvent::Recovering(tile_entity_id, prop_entity_id) => {
-                unimplemented!()
-            }
-            TileEvent::Captured(tile_entity_id, prop_entity_id) => {
-                let Tile(tile_id) = tiles.get(*tile_entity_id).unwrap();
-                let tile = game.tiles.get(*tile_id).unwrap();
-                let theme_tile = theme.tile(&tile).unwrap();
-                if let Some(prop_entity_id) = prop_entity_id {
-                    let mut prop_sprite = prop_sprites.get_mut(*prop_entity_id).unwrap();
-                    if let Some(prop_index) = theme_tile.prop_index {
-                        prop_sprite
-                            .texture_atlas
-                            .as_mut()
-                            .map(|a| a.index = prop_index);
-                    }
-                }
+    for (Prop(tile_id), ChildOf(tile), mut sprite) in props.iter_mut() {
+        if let Ok(Owner(owner)) = changed_owners.get(*tile) {
+            let tile = game.tiles.get(*tile_id).unwrap();
+            let theme_tile = theme.tile(&tile).unwrap();
+            if let Some(prop_index) = theme_tile.prop_index {
+                sprite.texture_atlas.as_mut().map(|a| a.index = prop_index);
             }
         }
     }
@@ -646,7 +627,8 @@ fn tile_bundle(
     let theme_capturebar = &theme.spec.capture_bar;
     (
         Tile(tile_id),
-        CapturePoints(tile.capture_points),
+        Owner(tile.owner.unwrap_or(0)),
+        CaptureState::Recovering(tile.capture_points),
         sprite_sheet.sprite(theme_tile.tile_index),
     )
 }
@@ -696,13 +678,16 @@ fn event_processor_system(
     theme: Res<Theme>,
     mut animations: ResMut<Assets<AnimationClip>>,
     mut graphs: ResMut<Assets<AnimationGraph>>,
-    mut units: Query<(Entity, &Unit, &mut Moved, &mut Deployed)>,
+    mut units: Query<(Entity, &Unit)>,
     mut tiles: Query<(Entity, &Tile)>,
     mut props: Query<(Entity, &Prop)>,
+    mut unit_moveds: Query<&mut Moved, With<Unit>>,
+    mut unit_deployeds: Query<&mut Deployed, With<Unit>>,
+    mut tile_owners: Query<&mut Owner, With<Tile>>,
+    mut tile_capture_states: Query<&mut CaptureState, With<Tile>>,
     mut funds: Query<&mut Funds>,
     mut players: Query<&AnimationPlayer>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<TopBar>>,
-    mut tile_event_writer: EventWriter<TileEvent>,
 ) {
     ep.state = if let Some(state) = ep.state.take() {
         match state {
@@ -733,14 +718,14 @@ fn event_processor_system(
     let find_unit_entity_id = |unit_id| {
         units
             .iter()
-            .find_map(|(entity_id, Unit(uid), _, _)| (*uid == unit_id).then_some(entity_id))
+            .find_map(|(entity_id, Unit(uid))| (*uid == unit_id).then_some(entity_id))
     };
-    let find_tile_entity_id = |tile_id| {
+    let find_tile_entity_id = |tile_id: wars::game::TileId| {
         tiles
             .iter()
             .find_map(|(entity_id, Tile(tid))| (*tid == tile_id).then_some(entity_id))
     };
-    let find_prop_entity_id = |tile_id| {
+    let find_prop_entity_id = |tile_id: wars::game::TileId| {
         props
             .iter()
             .find_map(|(entity_id, Prop(tid))| (*tid == tile_id).then_some(entity_id))
@@ -770,7 +755,7 @@ fn event_processor_system(
                     None
                 }
                 Event::EndTurn(player_number) => {
-                    for (_, _, mut moved, _) in units.iter_mut() {
+                    for mut moved in unit_moveds.iter_mut() {
                         *moved = Moved(false);
                     }
                     None
@@ -806,10 +791,8 @@ fn event_processor_system(
                     }
                 }
                 Event::Wait(unit_id) => {
-                    let mut moved = units
-                        .iter_mut()
-                        .find_map(|(_, Unit(uid), moved, _)| (*uid == unit_id).then_some(moved))
-                        .unwrap();
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(unit_entity_id).unwrap();
                     *moved = Moved(true);
                     None
                 }
@@ -822,22 +805,14 @@ fn event_processor_system(
                     None
                 }
                 Event::Deploy(unit_id) => {
-                    let mut deployed = units
-                        .iter_mut()
-                        .find_map(|(_, Unit(uid), _, deployed)| {
-                            (*uid == unit_id).then_some(deployed)
-                        })
-                        .unwrap();
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
+                    let mut deployed = unit_deployeds.get_mut(unit_entity_id).unwrap();
                     *deployed = Deployed(true);
                     None
                 }
                 Event::Undeploy(unit_id) => {
-                    let mut deployed = units
-                        .iter_mut()
-                        .find_map(|(_, Unit(uid), _, deployed)| {
-                            (*uid == unit_id).then_some(deployed)
-                        })
-                        .unwrap();
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
+                    let mut deployed = unit_deployeds.get_mut(unit_entity_id).unwrap();
                     *deployed = Deployed(false);
                     None
                 }
@@ -845,21 +820,21 @@ fn event_processor_system(
                 //Event::Unload(unloading_unit_id, unloaded_unit_id, position) => None,
                 Event::Capture(unit_id, tile_id, capture_points) => {
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
-                    let prop_entity_id = find_prop_entity_id(tile_id);
-                    tile_event_writer.write(TileEvent::Capturing(tile_entity_id, prop_entity_id));
+                    let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
+                    *capture_status = CaptureState::Capturing(capture_points);
                     None
                 }
-                Event::Captured(unit_id, tile_id) => {
+                Event::Captured(unit_id, tile_id, player_number) => {
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
-                    let prop_entity_id = find_prop_entity_id(tile_id);
-                    tile_event_writer.write(TileEvent::Captured(tile_entity_id, prop_entity_id));
+                    let mut owner = tile_owners.get_mut(tile_entity_id).unwrap();
+                    *owner = Owner(player_number.unwrap_or(0));
                     None
                 }
                 //Event::Build(tile_id, unit_id, unit_type, credits) => None,
                 Event::TileCapturePointRegen(tile_id, capture_points) => {
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
-                    let prop_entity_id = find_prop_entity_id(tile_id);
-                    tile_event_writer.write(TileEvent::Recovering(tile_entity_id, prop_entity_id));
+                    let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
+                    *capture_status = CaptureState::Recovering(capture_points);
                     None
                 }
                 e => Some(EventProcess::NoOp(e)),
