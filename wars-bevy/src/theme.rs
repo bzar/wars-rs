@@ -87,12 +87,16 @@ pub struct ThemeUnit {
 pub struct ThemeNumber {
     pub number_index: usize,
 }
+pub struct ThemeEmblem {
+    pub emblem_index: usize,
+}
 pub struct Theme {
     pub spec: ThemeSpec,
     tiles: HashMap<(usize, usize, usize), ThemeTile>,
     units: HashMap<(usize, usize), ThemeUnit>,
     health_numbers: Vec<ThemeNumber>,
     damage_numbers: Vec<ThemeNumber>,
+    deploy_emblem: usize,
 }
 
 impl From<ThemeSpec> for Theme {
@@ -163,12 +167,14 @@ impl From<ThemeSpec> for Theme {
             .filter_map(|label| label_indices.get(label))
             .map(|&number_index| ThemeNumber { number_index })
             .collect();
+        let deploy_emblem = label_indices.get(&spec.emblems.deploy).copied().unwrap();
         Self {
             spec,
             tiles,
             units,
             health_numbers,
             damage_numbers,
+            deploy_emblem,
         }
     }
 }
@@ -205,5 +211,11 @@ impl Theme {
 
     pub fn hex_sprite_center_offset(&self) -> (i32, i32) {
         (0, (self.spec.image.height - self.spec.hex.height) as i32)
+    }
+
+    pub fn deploy(&self) -> ThemeEmblem {
+        ThemeEmblem {
+            emblem_index: self.deploy_emblem,
+        }
     }
 }
