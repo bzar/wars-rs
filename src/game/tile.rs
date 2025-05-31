@@ -51,4 +51,7 @@ impl Tile {
     pub fn position(&self) -> Position {
         Position(self.x, self.y)
     }
+    pub fn max_capture_points(&self) -> u32 {
+        MAX_CAPTURE_POINTS
+    }
 }

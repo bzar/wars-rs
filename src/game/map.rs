@@ -18,34 +18,40 @@ impl Map {
 struct JsonMap {
     name: String,
     funds: u32,
-    #[serde(rename="mapData")]
-    map_data: Vec<JsonMapTile>
+    #[serde(rename = "mapData")]
+    map_data: Vec<JsonMapTile>,
 }
 
 #[derive(Serialize, Deserialize)]
 struct JsonMapTile {
     x: i32,
     y: i32,
-    #[serde(rename="type")]
+    #[serde(rename = "type")]
     tile_type: u32,
-    #[serde(rename="subtype")]
+    #[serde(rename = "subtype")]
     tile_subtype: u32,
     owner: u32,
-    unit: Option<JsonMapUnit>
+    unit: Option<JsonMapUnit>,
 }
 
 impl JsonMapTile {
     fn as_tile(&self, unit_id: UnitId) -> Tile {
         let terrain = {
             use model::Terrain::*;
-            [Road, Plains, Forest, Mountains, Water,
-            City, Base, Fort, Airport, Port,Beach, Bridge, HQ][self.tile_type as usize]
+            [
+                Road, Plains, Forest, Mountains, Water, City, Base, Fort, Airport, Port, Beach,
+                Bridge, HQ,
+            ][self.tile_type as usize]
         };
 
         Tile {
             terrain,
             terrain_subtype_id: self.tile_subtype,
-            owner: if self.owner != 0 { Some(self.owner) } else { None },
+            owner: if self.owner != 0 {
+                Some(self.owner)
+            } else {
+                None
+            },
             x: self.x,
             y: self.y,
             unit: self.unit.as_ref().map(|_| unit_id),
@@ -56,23 +62,45 @@ impl JsonMapTile {
 
 #[derive(Serialize, Deserialize)]
 struct JsonMapUnit {
-    #[serde(rename="type")]
+    #[serde(rename = "type")]
     unit_type: u32,
-    owner: u32
+    owner: u32,
 }
 
 impl JsonMapUnit {
     fn as_unit(&self) -> Unit {
         let unit_type = {
             use model::UnitType::*;
-            [Infantry, ATInfantry, Scout, LightTank, MediumTank, HeavyTank,
-            LightArtillery, MediumArtillery, HeavyArtillery, AAVehicle, SAMVehicle,
-            AttackCopter, Interceptor, Bomber, APC, TransportCopter,
-            CargoShip,GunBoat, AABoat, Cruiser][self.unit_type as usize]
+            [
+                Infantry,
+                ATInfantry,
+                Scout,
+                LightTank,
+                MediumTank,
+                HeavyTank,
+                LightArtillery,
+                MediumArtillery,
+                HeavyArtillery,
+                AAVehicle,
+                SAMVehicle,
+                AttackCopter,
+                Interceptor,
+                Bomber,
+                APC,
+                TransportCopter,
+                CargoShip,
+                GunBoat,
+                AABoat,
+                Cruiser,
+            ][self.unit_type as usize]
         };
         Unit {
             unit_type,
-            owner: if self.owner != 0 { Some(self.owner) } else { None },
+            owner: if self.owner != 0 {
+                Some(self.owner)
+            } else {
+                None
+            },
             ..Unit::default()
         }
     }
@@ -80,17 +108,26 @@ impl JsonMapUnit {
 impl JsonMap {
     fn into_map(self) -> Map {
         let tiles = {
-            self.map_data.iter().enumerate()
+            self.map_data
+                .iter()
+                .enumerate()
                 .map(|(i, t)| (i, t.as_tile(i)))
                 .collect()
         };
         let units = {
-            self.map_data.iter().enumerate()
+            self.map_data
+                .iter()
+                .enumerate()
                 .filter_map(|(i, t)| t.unit.as_ref().map(|u| (i, u.as_unit())))
                 .collect()
         };
-        
-        Map { name: self.name, funds: self.funds, units, tiles }
+
+        Map {
+            name: self.name,
+            funds: self.funds,
+            units,
+            tiles,
+        }
     }
 }
 #[cfg(test)]
@@ -105,18 +142,29 @@ mod test {
         assert!(map.funds == 0);
 
         // There should be a light tank at (14, 1)
-        let tile_with_unit = map.tiles.values()
+        let tile_with_unit = map
+            .tiles
+            .values()
             .filter(|t| t.x == 14 && t.y == 1)
-            .next().unwrap();
-        
+            .next()
+            .unwrap();
+
         assert!(tile_with_unit.unit.is_some());
 
         let unit_id = tile_with_unit.unit.unwrap();
-        let unit = map.units.iter()
+        let unit = map
+            .units
+            .iter()
             .filter(|&(&i, _)| i == unit_id)
             .map(|(_, u)| u)
-            .next().unwrap();
+            .next()
+            .unwrap();
 
-        assert!(unit.unit_type == model::UnitType::LightTank && unit.owner.is_none(), "{:?} == 1 && {:?} == None", unit.unit_type, unit.owner);
+        assert!(
+            unit.unit_type == model::UnitType::LightTank && unit.owner.is_none(),
+            "{:?} == 1 && {:?} == None",
+            unit.unit_type,
+            unit.owner
+        );
     }
 }

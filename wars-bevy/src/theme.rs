@@ -76,19 +76,25 @@ pub struct ThemeSpec {
     pub emblems: Emblems,
 }
 
+pub type Index = usize;
 pub struct ThemeTile {
-    pub tile_index: usize,
-    pub prop_index: Option<usize>,
+    pub tile_index: Index,
+    pub prop_index: Option<Index>,
     pub offset: i32,
 }
 pub struct ThemeUnit {
-    pub unit_index: usize,
+    pub unit_index: Index,
 }
 pub struct ThemeNumber {
-    pub number_index: usize,
+    pub number_index: Index,
 }
 pub struct ThemeEmblem {
-    pub emblem_index: usize,
+    pub emblem_index: Index,
+}
+pub struct ThemeCaptureBar {
+    pub bar_index: Index,
+    pub capturing_bit_index: Index,
+    pub recovering_bit_index: Index,
 }
 pub struct Theme {
     pub spec: ThemeSpec,
@@ -96,7 +102,8 @@ pub struct Theme {
     units: HashMap<(usize, usize), ThemeUnit>,
     health_numbers: Vec<ThemeNumber>,
     damage_numbers: Vec<ThemeNumber>,
-    deploy_emblem: usize,
+    pub deploy_emblem: ThemeEmblem,
+    pub capture_bar: ThemeCaptureBar,
 }
 
 impl From<ThemeSpec> for Theme {
@@ -167,7 +174,16 @@ impl From<ThemeSpec> for Theme {
             .filter_map(|label| label_indices.get(label))
             .map(|&number_index| ThemeNumber { number_index })
             .collect();
-        let deploy_emblem = label_indices.get(&spec.emblems.deploy).copied().unwrap();
+        let deploy_emblem = ThemeEmblem {
+            emblem_index: label_indices.get(&spec.emblems.deploy).copied().unwrap(),
+        };
+        let capture_bar = ThemeCaptureBar {
+            bar_index: *label_indices.get(&spec.capture_bar.bar_name).unwrap(),
+            capturing_bit_index: *label_indices.get(&spec.capture_bar.capturing_name).unwrap(),
+            recovering_bit_index: *label_indices
+                .get(&spec.capture_bar.recovering_name)
+                .unwrap(),
+        };
         Self {
             spec,
             tiles,
@@ -175,6 +191,7 @@ impl From<ThemeSpec> for Theme {
             health_numbers,
             damage_numbers,
             deploy_emblem,
+            capture_bar,
         }
     }
 }
@@ -211,11 +228,5 @@ impl Theme {
 
     pub fn hex_sprite_center_offset(&self) -> (i32, i32) {
         (0, (self.spec.image.height - self.spec.hex.height) as i32)
-    }
-
-    pub fn deploy(&self) -> ThemeEmblem {
-        ThemeEmblem {
-            emblem_index: self.deploy_emblem,
-        }
     }
 }
