@@ -101,7 +101,7 @@ fn unit_deployed_emblem_system(
 
 fn unit_moved_system(mut changed_moved: Query<(&Moved, &mut Sprite), Changed<Moved>>) {
     for (Moved(moved), mut sprite) in changed_moved.iter_mut() {
-        sprite.flip_y = *moved;
+        sprite.color.set_alpha(if *moved { 0.8 } else { 1.0 });
     }
 }
 fn unit_highlight_system(
@@ -109,8 +109,10 @@ fn unit_highlight_system(
 ) {
     for (highlight, mut sprite) in changed_highlights.iter_mut() {
         match highlight {
-            UnitHighlight::Normal => sprite.color = Color::WHITE,
-            UnitHighlight::Target => sprite.color = Color::srgba(1.0, 0.1, 0.1, 1.0),
+            UnitHighlight::Normal => sprite.color = Color::WHITE.with_alpha(sprite.color.alpha()),
+            UnitHighlight::Target => {
+                sprite.color = Color::srgba(1.0, 0.1, 0.1, 1.0).with_alpha(sprite.color.alpha())
+            }
         }
     }
 }

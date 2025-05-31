@@ -362,10 +362,6 @@ pub fn move_and_attack(
         game.units.update(target_id, target)?;
     }
 
-    if let Some(unit_id) = dst_tile.unit {
-        emit(Event::Wait(unit_id));
-    }
-
     game.update_tiles_and_units(
         [
             (src_tile_id, src_tile),

@@ -78,6 +78,13 @@ enum Health {
 }
 
 impl Health {
+    fn from_value(health: u32) -> Self {
+        if health >= UNIT_MAX_HEALTH {
+            Self::Full
+        } else {
+            Self::Damaged(health)
+        }
+    }
     fn value(&self) -> u32 {
         match self {
             Self::Full => UNIT_MAX_HEALTH,
@@ -86,9 +93,9 @@ impl Health {
     }
     fn damage(&self, x: u32) -> Self {
         if x > self.value() {
-            return Self::Damaged(0);
+            Self::Damaged(0)
         } else {
-            return Self::Damaged(self.value() - x);
+            Self::Damaged(self.value() - x)
         }
     }
 }
@@ -295,7 +302,12 @@ fn event_processor_system(
                     }
                     None
                 }
-                //Event::UnitRepair(unit_id, health) => None,
+                Event::UnitRepair(unit_id, health) => {
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
+                    let mut unit_health = unit_healths.get_mut(unit_entity_id).unwrap();
+                    *unit_health = Health::from_value(health);
+                    None
+                }
                 //Event::WinGame(player_number) => None,
                 //Event::Surrender(player_number) => None,
                 Event::Move(unit_id, path) => {
@@ -323,16 +335,19 @@ fn event_processor_system(
                     *moved = Moved(true);
                     None
                 }
-                Event::Attack(_attacking_unit_id, target_unit_id, health) => {
-                    let unit_entity_id = find_unit_entity_id(target_unit_id).unwrap();
-                    let mut unit_health = unit_healths.get_mut(unit_entity_id).unwrap();
-                    *unit_health = unit_health.damage(health);
+                Event::Attack(attacking_unit_id, target_unit_id, health) => {
+                    let target_entity_id = find_unit_entity_id(target_unit_id).unwrap();
+                    let attacking_entity_id = find_unit_entity_id(attacking_unit_id).unwrap();
+                    let mut target_health = unit_healths.get_mut(target_entity_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(attacking_entity_id).unwrap();
+                    *moved = Moved(true);
+                    *target_health = target_health.damage(health);
                     None
                 }
-                Event::Counterattack(attacking_unit_id, target_unit_id, health) => {
-                    let unit_entity_id = find_unit_entity_id(target_unit_id).unwrap();
-                    let mut unit_health = unit_healths.get_mut(unit_entity_id).unwrap();
-                    *unit_health = unit_health.damage(health);
+                Event::Counterattack(_attacking_unit_id, target_unit_id, health) => {
+                    let target_entity_id = find_unit_entity_id(target_unit_id).unwrap();
+                    let mut target_health = unit_healths.get_mut(target_entity_id).unwrap();
+                    *target_health = target_health.damage(health);
                     None
                 }
                 Event::Destroyed(_attacking_unit_id, target_unit_id) => {
@@ -344,28 +359,38 @@ fn event_processor_system(
                 Event::Deploy(unit_id) => {
                     let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                     let mut deployed = unit_deployeds.get_mut(unit_entity_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(unit_entity_id).unwrap();
                     *deployed = Deployed(true);
+                    *moved = Moved(true);
                     None
                 }
                 Event::Undeploy(unit_id) => {
                     let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                     let mut deployed = unit_deployeds.get_mut(unit_entity_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(unit_entity_id).unwrap();
                     *deployed = Deployed(false);
+                    *moved = Moved(true);
                     None
                 }
                 //Event::Load(loaded_unit_id, loading_unit_id) => None,
                 //Event::Unload(unloading_unit_id, unloaded_unit_id, position) => None,
-                Event::Capture(_unit_id, tile_id, capture_points) => {
+                Event::Capture(unit_id, tile_id, capture_points) => {
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(unit_entity_id).unwrap();
                     let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
+                    *moved = Moved(true);
                     *capture_status = CaptureState::Capturing(capture_points);
                     None
                 }
-                Event::Captured(_unit_id, tile_id, player_number) => {
+                Event::Captured(unit_id, tile_id, player_number) => {
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
+                    let mut moved = unit_moveds.get_mut(unit_entity_id).unwrap();
                     let mut owner = tile_owners.get_mut(tile_entity_id).unwrap();
-                    *owner = Owner(player_number.unwrap_or(0));
                     let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
+                    *moved = Moved(true);
+                    *owner = Owner(player_number.unwrap_or(0));
                     *capture_status = CaptureState::Recovering(1);
                     None
                 }
