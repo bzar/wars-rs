@@ -366,7 +366,7 @@ fn unit_bundle(
     } else {
         Visibility::Hidden
     };
-    let theme_unit = theme.unit(unit).unwrap();
+    let theme_unit = theme.unit(unit.unit_type, unit.owner).unwrap();
     let health = if unit.is_damaged() {
         Health::Damaged(unit.health)
     } else {

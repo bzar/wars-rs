@@ -1,8 +1,8 @@
 use crate::{
-    EndTurnButton, EventProcessor, Funds, Game, MapAction, MapInteractionState, MenuBar, Unit,
-    UnitHighlight, VisibleActionButtons,
+    EndTurnButton, EventProcessor, Funds, Game, MapAction, MapInteractionState, MenuBar,
+    SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
 };
-use bevy::prelude::*;
+use bevy::{log::tracing::Instrument, prelude::*};
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {
@@ -19,7 +19,12 @@ impl Plugin for UIPlugin {
     }
 }
 
-fn setup(mut commands: Commands) {
+fn setup(
+    mut commands: Commands,
+    game: Res<Game>,
+    theme: Res<Theme>,
+    sprite_sheet: Res<SpriteSheet>,
+) {
     commands.spawn((
         MenuBar,
         Node {
@@ -59,6 +64,56 @@ fn setup(mut commands: Commands) {
         ],
     ));
 
+    let unit_type_count = enum_iterator::cardinality::<wars::model::UnitType>();
+    let item_width = 134.0;
+    let item_height = 100.0;
+    let num_rows = unit_type_count.isqrt();
+    let num_cols = unit_type_count.div_ceil(num_rows);
+    let build_menu = commands
+        .spawn((
+            Node {
+                width: Val::Px(num_cols as f32 * item_width),
+                height: Val::Px(num_rows as f32 * item_height),
+                position_type: PositionType::Absolute,
+                left: Val::Percent(10.0),
+                top: Val::Percent(10.0),
+                display: Display::Grid,
+                padding: UiRect::all(Val::Px(3.0)),
+                grid_template_columns: (0..num_cols).map(|_| GridTrack::px(item_width)).collect(),
+                grid_template_rows: (0..num_rows).map(|_| GridTrack::px(item_height)).collect(),
+                ..Default::default()
+            },
+            BackgroundColor(Color::WHITE),
+        ))
+        .id();
+
+    let player_number = game.in_turn_number();
+    for unit_type in enum_iterator::all::<wars::model::UnitType>() {
+        let info = wars::model::unit_type(unit_type);
+
+        let button = commands
+            .spawn((
+                Node {
+                    display: Display::Grid,
+                    width: Val::Px(128.0),
+                    height: Val::Px(96.0),
+                    grid_template_rows: vec![GridTrack::px(64.0), GridTrack::px(32.0)],
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    border: UiRect::all(Val::Px(2.0)),
+                    ..default()
+                },
+                BorderColor(Color::BLACK.with_alpha(0.9)),
+                BackgroundColor(Color::BLACK.with_alpha(0.5)),
+                ChildOf(build_menu),
+            ))
+            .id();
+        commands.spawn((
+            sprite_sheet.image(theme.unit(unit_type, player_number).unwrap().unit_index),
+            ChildOf(button),
+        ));
+        commands.spawn((Text(format!("{} cr", info.price)), ChildOf(button)));
+    }
     commands.spawn((
         MenuBar,
         Node {

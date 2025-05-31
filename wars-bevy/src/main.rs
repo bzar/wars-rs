@@ -26,6 +26,15 @@ impl SpriteSheet {
             },
         )
     }
+    fn image(&self, index: usize) -> ImageNode {
+        ImageNode::from_atlas_image(
+            self.texture.clone(),
+            TextureAtlas {
+                layout: self.layout.clone(),
+                index,
+            },
+        )
+    }
 }
 #[derive(Component)]
 struct Tile(wars::game::TileId);
@@ -182,8 +191,8 @@ fn main() {
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
         .insert_resource(VisibleActionButtons::default())
-        .add_plugins((camera::CameraPlugin, ui::UIPlugin, map::MapPlugin))
-        .add_systems(Startup, setup)
+        .add_plugins((camera::CameraPlugin, map::MapPlugin, ui::UIPlugin))
+        .add_systems(PreStartup, setup)
         .add_systems(Update, (event_processor_system,))
         .run();
 }

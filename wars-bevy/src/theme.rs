@@ -208,9 +208,13 @@ impl Theme {
             tile.owner.unwrap_or(0) as usize,
         ))
     }
-    pub fn unit(&self, unit: &wars::game::Unit) -> Option<&ThemeUnit> {
+    pub fn unit(
+        &self,
+        unit_type: wars::model::UnitType,
+        unit_owner: Option<wars::game::PlayerNumber>,
+    ) -> Option<&ThemeUnit> {
         self.units
-            .get(&(unit.unit_type as usize, unit.owner.unwrap_or(0) as usize))
+            .get(&(unit_type as usize, unit_owner.unwrap_or(0) as usize))
     }
     pub fn health_number(&self, number: usize) -> Option<&ThemeNumber> {
         self.health_numbers.get(number)

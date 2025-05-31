@@ -1,7 +1,8 @@
 mod model;
 pub use self::model::*;
+use enum_iterator::Sequence;
 
-#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord)]
+#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord, Sequence)]
 pub enum UnitType {
     Infantry = 0,
     ATInfantry,
