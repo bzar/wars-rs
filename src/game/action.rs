@@ -228,16 +228,17 @@ pub fn build(
     let unit = Unit {
         unit_type: build_type,
         moved: true,
+        owner: tile.owner,
         ..Unit::default()
     };
     let unit_id = game.units.insert(unit);
     tile.unit = Some(unit_id);
     in_turn_player.funds -= price;
 
-    emit(Event::Build(tile_id, unit_id, build_type, price));
-
     game.tiles.update(tile_id, tile)?;
     game.players.update(in_turn_player)?;
+
+    emit(Event::Build(tile_id, unit_id, build_type, price));
 
     Ok(())
 }

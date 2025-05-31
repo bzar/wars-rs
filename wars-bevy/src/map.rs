@@ -1,7 +1,7 @@
 use crate::{
-    CaptureBar, CaptureBarBit, CaptureState, DeployEmblem, Deployed, EventProcessor, Game, Health,
-    MapAction, MapInteractionState, Moved, OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme,
-    Tile, TileHighlight, Unit, UnitHighlight, VisibleActionButtons,
+    BuildMenu, CaptureBar, CaptureBarBit, CaptureState, DeployEmblem, Deployed, EventProcessor,
+    Game, Health, MapAction, MapInteractionState, Moved, OnesDigit, Owner, Prop, SpriteSheet,
+    TensDigit, Theme, Tile, TileHighlight, Unit, UnitHighlight, VisibleActionButtons,
 };
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -167,6 +167,7 @@ fn tile_click_observer(
     mut event_processor: ResMut<EventProcessor>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
+    mut build_menu_visibility: Query<&mut Visibility, With<BuildMenu>>,
 ) {
     info!("{trigger:?}");
     let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) else {
@@ -198,6 +199,13 @@ fn tile_click_observer(
                         ))
                     }
                 }
+            } else if !tile.terrain_data().build_classes.is_empty()
+                && tile.owner == game.in_turn_number()
+            {
+                build_menu_visibility
+                    .iter_mut()
+                    .for_each(|mut v| *v = Visibility::Inherited);
+                next_state = Some(MapInteractionState::SelectUnitToBuild(*tile_id));
             }
         }
         MapInteractionState::SelectDestination(unit_id, ref destinations) => {
@@ -260,6 +268,12 @@ fn tile_click_observer(
                     }
                 }
             }
+        }
+        MapInteractionState::SelectUnitToBuild(_tile_id) => {
+            build_menu_visibility
+                .iter_mut()
+                .for_each(|mut v| *v = Visibility::Hidden);
+            next_state = Some(MapInteractionState::Normal);
         }
     };
     if let Some(next_state) = next_state {
@@ -355,7 +369,7 @@ fn capture_bar_bit_system(
         }
     }
 }
-fn unit_bundle(
+pub fn unit_bundle(
     unit_id: wars::game::UnitId,
     unit: &wars::game::Unit,
     theme: &Theme,

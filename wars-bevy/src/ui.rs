@@ -1,6 +1,6 @@
 use crate::{
-    EndTurnButton, EventProcessor, Funds, Game, MapAction, MapInteractionState, MenuBar,
-    SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
+    BuildItem, BuildMenu, EndTurnButton, EventProcessor, Funds, Game, MapAction,
+    MapInteractionState, MenuBar, SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
 };
 use bevy::{log::tracing::Instrument, prelude::*};
 
@@ -14,6 +14,7 @@ impl Plugin for UIPlugin {
                 end_turn_button_system,
                 map_action_button_system,
                 visible_action_buttons_system,
+                build_button_system,
             ),
         );
     }
@@ -71,6 +72,7 @@ fn setup(
     let num_cols = unit_type_count.div_ceil(num_rows);
     let build_menu = commands
         .spawn((
+            BuildMenu,
             Node {
                 width: Val::Px(num_cols as f32 * item_width),
                 height: Val::Px(num_rows as f32 * item_height),
@@ -84,6 +86,7 @@ fn setup(
                 ..Default::default()
             },
             BackgroundColor(Color::WHITE),
+            Visibility::Hidden,
         ))
         .id();
 
@@ -93,6 +96,8 @@ fn setup(
 
         let button = commands
             .spawn((
+                Button,
+                BuildItem(unit_type),
                 Node {
                     display: Display::Grid,
                     width: Val::Px(128.0),
@@ -189,6 +194,35 @@ fn visible_action_buttons_system(
         } else {
             Visibility::Hidden
         };
+    }
+}
+fn build_button_system(
+    game: ResMut<Game>,
+    mut event_processor: ResMut<EventProcessor>,
+    build_buttons: Query<(&Interaction, &BuildItem), (Changed<Interaction>, With<Button>)>,
+    mut state: ResMut<MapInteractionState>,
+    mut build_menu_visibility: Query<&mut Visibility, With<BuildMenu>>,
+) {
+    let MapInteractionState::SelectUnitToBuild(tile_id) = *state else {
+        return;
+    };
+
+    let tile = game.tiles.get(tile_id).unwrap();
+
+    let presses = build_buttons
+        .iter()
+        .filter_map(|(i, bi)| (*i == Interaction::Pressed).then_some(bi));
+    let game = &mut game.into_inner().0;
+    for BuildItem(unit_type) in presses {
+        wars::game::action::build(game, tile.position(), *unit_type, &mut |e| {
+            event_processor.queue.push_back(e)
+        })
+        .expect("Could not build unit");
+        *state = MapInteractionState::Normal;
+        build_menu_visibility
+            .iter_mut()
+            .for_each(|mut v| *v = Visibility::Hidden);
+        break;
     }
 }
 fn map_action_button_system(

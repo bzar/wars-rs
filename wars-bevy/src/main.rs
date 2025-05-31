@@ -135,6 +135,11 @@ struct MenuBar;
 #[derive(Component)]
 struct Funds(u32);
 
+impl Funds {
+    fn deduct(&self, amount: u32) -> Self {
+        Self(self.0.saturating_sub(amount))
+    }
+}
 #[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
 enum MapAction {
     Wait,
@@ -167,7 +172,14 @@ enum MapInteractionState {
         Vec<wars::game::Position>,
         HashSet<wars::game::UnitId>,
     ),
+    SelectUnitToBuild(wars::game::TileId),
 }
+
+#[derive(Component)]
+struct BuildMenu;
+
+#[derive(Component)]
+struct BuildItem(wars::model::UnitType);
 
 mod camera;
 mod map;
@@ -224,8 +236,11 @@ fn event_processor_system(
     mut ep: ResMut<EventProcessor>,
     game: Res<Game>,
     theme: Res<Theme>,
-    mut animations: ResMut<Assets<AnimationClip>>,
-    mut graphs: ResMut<Assets<AnimationGraph>>,
+    animation_params: (
+        ResMut<Assets<AnimationClip>>,
+        ResMut<Assets<AnimationGraph>>,
+        Query<&AnimationPlayer>,
+    ),
     units: Query<(Entity, &Unit)>,
     tiles: Query<(Entity, &Tile)>,
     mut unit_moveds: Query<&mut Moved, With<Unit>>,
@@ -234,8 +249,8 @@ fn event_processor_system(
     mut tile_owners: Query<&mut Owner, With<Tile>>,
     mut tile_capture_states: Query<&mut CaptureState, With<Tile>>,
     mut funds: Query<&mut Funds>,
-    players: Query<&AnimationPlayer>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
+    sprite_sheet: Res<SpriteSheet>,
 ) {
     ep.state = if let Some(state) = ep.state.take() {
         match state {
@@ -244,6 +259,7 @@ fn event_processor_system(
                 None
             }
             EventProcess::Animation(entity) => {
+                let (_, _, players) = animation_params;
                 let player = players.get(entity).unwrap();
                 if player.all_finished() {
                     info!("Finished animation");
@@ -323,6 +339,7 @@ fn event_processor_system(
                     if path.len() > 1 {
                         let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                         let mut unit = commands.entity(unit_entity_id);
+                        let (mut animations, mut graphs, _) = animation_params;
                         let info = move_animation(path, &theme, &mut animations, &mut graphs);
                         unit.insert((
                             info.target_name,
@@ -403,7 +420,22 @@ fn event_processor_system(
                     *capture_status = CaptureState::Recovering(1);
                     None
                 }
-                //Event::Build(tile_id, unit_id, unit_type, credits) => None,
+                Event::Build(tile_id, unit_id, _unit_type, credits) => {
+                    let tile = game.tiles.get(tile_id).unwrap();
+                    let theme_tile = theme.tile(&tile).unwrap();
+                    let (tx, ty, tz) = theme.map_hex_center(tile.x, tile.y);
+                    let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
+                    let (ox, oy) = theme.hex_sprite_center_offset();
+                    let unit = game.units.get_ref(&unit_id).unwrap();
+                    commands.spawn((
+                        map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
+                        Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, tz as f32 + 1.5),
+                    ));
+                    for mut fund in funds.iter_mut() {
+                        *fund = fund.deduct(credits);
+                    }
+                    None
+                }
                 Event::TileCapturePointRegen(tile_id, capture_points) => {
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();
                     let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
