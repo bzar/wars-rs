@@ -26,7 +26,7 @@ pub enum UnitType {
     Cruiser,
 }
 
-#[derive(PartialEq, Copy, Clone, Debug)]
+#[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 pub enum UnitClass {
     Infantry,
     Vehicle,

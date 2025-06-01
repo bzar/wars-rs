@@ -205,6 +205,8 @@ fn tile_click_observer(
                 if let Ok((mut build_menu, mut visibility)) = build_menus.single_mut() {
                     *visibility = Visibility::Inherited;
                     build_menu.price_limit = game.in_turn_player().unwrap().funds;
+                    build_menu.unit_classes =
+                        tile.terrain_data().build_classes.iter().copied().collect();
                 }
                 next_state = Some(MapInteractionState::SelectUnitToBuild(*tile_id));
             }

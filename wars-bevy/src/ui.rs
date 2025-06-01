@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use crate::{
-    BuildItem, BuildMenu, EndTurnButton, EventProcessor, Funds, Game, MapAction,
+    BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, MapAction,
     MapInteractionState, MenuBar, SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
 };
-use bevy::{ecs::entity_disabling::Disabled, prelude::*};
+use bevy::{ecs::entity_disabling::Disabled, prelude::*, ui::FocusPolicy};
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {
@@ -16,6 +18,7 @@ impl Plugin for UIPlugin {
                 visible_action_buttons_system,
                 build_button_system,
                 disable_build_items_outside_price_range,
+                disabled_button_system,
             ),
         );
     }
@@ -73,7 +76,10 @@ fn setup(
     let num_cols = unit_type_count.div_ceil(num_rows);
     let build_menu = commands
         .spawn((
-            BuildMenu { price_limit: 0 },
+            BuildMenu {
+                price_limit: 0,
+                unit_classes: HashSet::new(),
+            },
             Node {
                 width: Val::Px(num_cols as f32 * item_width),
                 height: Val::Px(num_rows as f32 * item_height),
@@ -86,13 +92,14 @@ fn setup(
                 grid_template_rows: (0..num_rows).map(|_| GridTrack::px(item_height)).collect(),
                 ..Default::default()
             },
-            BackgroundColor(Color::WHITE),
             Visibility::Hidden,
         ))
         .id();
 
     let player_number = game.in_turn_number();
-    for unit_type in enum_iterator::all::<wars::model::UnitType>() {
+    let mut unit_types = enum_iterator::all::<wars::model::UnitType>().collect::<Vec<_>>();
+    unit_types.sort_by_key(|t| wars::model::unit_type(*t).price);
+    for unit_type in unit_types {
         let info = wars::model::unit_type(unit_type);
 
         let button = commands
@@ -200,7 +207,10 @@ fn visible_action_buttons_system(
 fn build_button_system(
     game: ResMut<Game>,
     mut event_processor: ResMut<EventProcessor>,
-    build_buttons: Query<(&Interaction, &BuildItem), (Changed<Interaction>, With<Button>)>,
+    build_buttons: Query<
+        (&Interaction, &BuildItem),
+        (Changed<Interaction>, With<Button>, Without<DisabledButton>),
+    >,
     mut state: ResMut<MapInteractionState>,
     mut build_menu_visibility: Query<&mut Visibility, With<BuildMenu>>,
 ) {
@@ -305,21 +315,47 @@ fn map_action_button_system(
     }
 }
 
-fn disable_build_items_outside_price_range(
-    build_menus: Query<(&BuildMenu, &Children)>,
-    mut build_items: Query<(&BuildItem, &mut Node)>,
+fn disabled_button_system(
+    mut disabled_buttons: Query<&mut BackgroundColor, (With<Button>, With<DisabledButton>)>,
+    mut enabled_buttons: Query<&mut BackgroundColor, (With<Button>, Without<DisabledButton>)>,
 ) {
-    let (BuildMenu { price_limit }, children) = build_menus.single().unwrap();
+    for mut background_color in disabled_buttons.iter_mut() {
+        *background_color = BackgroundColor(Color::srgba(0.4, 0.4, 0.4, 1.0));
+    }
+    for mut background_color in enabled_buttons.iter_mut() {
+        *background_color = BackgroundColor(Color::srgba(0.7, 0.7, 0.7, 1.0));
+    }
+}
+fn disable_build_items_outside_price_range(
+    mut commands: Commands,
+    build_menus: Query<(&BuildMenu, &Children)>,
+    mut build_items: Query<(&mut Node, &BuildItem)>,
+) {
+    let (
+        BuildMenu {
+            price_limit,
+            unit_classes,
+        },
+        children,
+    ) = build_menus.single().unwrap();
     for child in children.iter() {
-        let Ok((BuildItem(unit_type), mut node)) = build_items.get_mut(child) else {
+        let Ok((mut node, BuildItem(unit_type))) = build_items.get_mut(child) else {
             continue;
         };
 
-        let price = wars::model::unit_type(*unit_type).price;
-        node.display = if price > *price_limit {
-            Display::None
+        let unit_info = wars::model::unit_type(*unit_type);
+
+        let mut build_item = commands.entity(child);
+        if unit_info.price > *price_limit {
+            build_item.insert(DisabledButton);
         } else {
+            build_item.remove::<DisabledButton>();
+        }
+
+        node.display = if unit_classes.contains(&unit_info.unit_class) {
             Display::Flex
+        } else {
+            Display::None
         };
     }
 }

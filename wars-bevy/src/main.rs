@@ -178,7 +178,11 @@ enum MapInteractionState {
 #[derive(Component)]
 struct BuildMenu {
     price_limit: u32,
+    unit_classes: HashSet<wars::model::UnitClass>,
 }
+
+#[derive(Component)]
+struct DisabledButton;
 
 #[derive(Component)]
 struct BuildItem(wars::model::UnitType);
