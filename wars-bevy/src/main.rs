@@ -192,7 +192,7 @@ mod map;
 mod ui;
 
 fn main() {
-    const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
+    const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/my-awesome-map.json");
     const THEME_JSON: &str = include_str!("../assets/settings.json");
     let theme: theme::Theme = theme::Theme::from_json(THEME_JSON).unwrap();
     let map = wars::game::Map::from_json(THIRD_PARTY_MAP).unwrap();
@@ -487,7 +487,7 @@ fn move_animation(
         AnimatableCurve::new(
             animated_field!(Transform::translation),
             SampleAutoCurve::new(
-                Interval::new(0.0, 0.2 * waypoints.len() as f32).unwrap(),
+                Interval::new(0.0, 0.1 * waypoints.len() as f32).unwrap(),
                 waypoints,
             )
             .unwrap(),

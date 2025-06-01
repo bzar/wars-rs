@@ -298,16 +298,18 @@ pub fn calculate_attack_damage(
         return None;
     }
     let target_armor = unit_type(target.unit_type).armor_type;
-    let defense = attacker.defense_in_terrain(target_terrain);
+    let defense = target.defense_in_terrain(target_terrain);
     attacker
         .unit_type_data()
         .weapons
         .iter()
         .map(|&w| weapon(w))
         .filter(|w| !w.require_deployed || attacker.deployed)
-        .filter_map(|w| (w.range_map)(distance).map(|efficiency| (w, dbg!(efficiency))))
+        .filter_map(|w| (w.range_map)(distance).map(|efficiency| (w, efficiency)))
         .filter_map(|(w, efficiency)| (w.power_map)(target_armor).map(|power| (efficiency, power)))
-        .map(|(efficiency, power)| attacker.health * power * efficiency * defense / (100_00_00))
+        .map(|(efficiency, power)| {
+            attacker.health * power * efficiency * (100 - defense) / (100_00_00)
+        })
         .max()
         .map(|damage| damage.max(1))
 }
