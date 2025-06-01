@@ -247,17 +247,24 @@ fn event_processor_system(
         ResMut<Assets<AnimationGraph>>,
         Query<&AnimationPlayer>,
     ),
-    units: Query<(Entity, &Unit)>,
-    tiles: Query<(Entity, &Tile)>,
-    mut unit_moveds: Query<&mut Moved, With<Unit>>,
-    mut unit_deployeds: Query<&mut Deployed, With<Unit>>,
-    mut unit_healths: Query<&mut Health, With<Unit>>,
-    mut tile_owners: Query<&mut Owner, With<Tile>>,
-    mut tile_capture_states: Query<&mut CaptureState, With<Tile>>,
+    unit_queries: (
+        Query<(Entity, &Unit)>,
+        Query<&mut Moved, With<Unit>>,
+        Query<&mut Deployed, With<Unit>>,
+        Query<&mut Health, With<Unit>>,
+    ),
+    tile_queries: (
+        Query<(Entity, &Tile)>,
+        Query<&mut Owner, With<Tile>>,
+        Query<&mut CaptureState, With<Tile>>,
+    ),
     mut funds: Query<&mut Funds>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
     sprite_sheet: Res<SpriteSheet>,
 ) {
+    // These are in tuples due to Bevy's system parameter limit
+    let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths) = unit_queries;
+    let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
     ep.state = if let Some(state) = ep.state.take() {
         match state {
             EventProcess::NoOp(event) => {
