@@ -8,6 +8,7 @@ edition = "2024"
 serde = "1.0.219"
 serde_json = "1.0.140"
 serde_derive = "1.0.219"
+enum-iterator = "2.1.0"
 
 [[bin]]
 name = "print_map"

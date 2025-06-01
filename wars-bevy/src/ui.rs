@@ -2,7 +2,7 @@ use crate::{
     BuildItem, BuildMenu, EndTurnButton, EventProcessor, Funds, Game, MapAction,
     MapInteractionState, MenuBar, SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
 };
-use bevy::{log::tracing::Instrument, prelude::*};
+use bevy::{ecs::entity_disabling::Disabled, prelude::*};
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {
@@ -15,6 +15,7 @@ impl Plugin for UIPlugin {
                 map_action_button_system,
                 visible_action_buttons_system,
                 build_button_system,
+                disable_build_items_outside_price_range,
             ),
         );
     }
@@ -72,7 +73,7 @@ fn setup(
     let num_cols = unit_type_count.div_ceil(num_rows);
     let build_menu = commands
         .spawn((
-            BuildMenu,
+            BuildMenu { price_limit: 0 },
             Node {
                 width: Val::Px(num_cols as f32 * item_width),
                 height: Val::Px(num_rows as f32 * item_height),
@@ -301,5 +302,24 @@ fn map_action_button_system(
 
     if let Some(next_state) = next_state {
         *state = next_state;
+    }
+}
+
+fn disable_build_items_outside_price_range(
+    build_menus: Query<(&BuildMenu, &Children)>,
+    mut build_items: Query<(&BuildItem, &mut Node)>,
+) {
+    let (BuildMenu { price_limit }, children) = build_menus.single().unwrap();
+    for child in children.iter() {
+        let Ok((BuildItem(unit_type), mut node)) = build_items.get_mut(child) else {
+            continue;
+        };
+
+        let price = wars::model::unit_type(*unit_type).price;
+        node.display = if price > *price_limit {
+            Display::None
+        } else {
+            Display::Flex
+        };
     }
 }

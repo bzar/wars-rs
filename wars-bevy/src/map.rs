@@ -167,7 +167,7 @@ fn tile_click_observer(
     mut event_processor: ResMut<EventProcessor>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
-    mut build_menu_visibility: Query<&mut Visibility, With<BuildMenu>>,
+    mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
 ) {
     info!("{trigger:?}");
     let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) else {
@@ -202,9 +202,10 @@ fn tile_click_observer(
             } else if !tile.terrain_data().build_classes.is_empty()
                 && tile.owner == game.in_turn_number()
             {
-                build_menu_visibility
-                    .iter_mut()
-                    .for_each(|mut v| *v = Visibility::Inherited);
+                if let Ok((mut build_menu, mut visibility)) = build_menus.single_mut() {
+                    *visibility = Visibility::Inherited;
+                    build_menu.price_limit = game.in_turn_player().unwrap().funds;
+                }
                 next_state = Some(MapInteractionState::SelectUnitToBuild(*tile_id));
             }
         }
@@ -270,9 +271,9 @@ fn tile_click_observer(
             }
         }
         MapInteractionState::SelectUnitToBuild(_tile_id) => {
-            build_menu_visibility
+            build_menus
                 .iter_mut()
-                .for_each(|mut v| *v = Visibility::Hidden);
+                .for_each(|(_, mut v)| *v = Visibility::Hidden);
             next_state = Some(MapInteractionState::Normal);
         }
     };
