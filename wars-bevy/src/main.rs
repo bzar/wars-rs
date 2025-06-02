@@ -261,6 +261,7 @@ fn event_processor_system(
     mut funds: Query<&mut Funds>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
     sprite_sheet: Res<SpriteSheet>,
+    mut map_interaction_state: ResMut<MapInteractionState>,
 ) {
     // These are in tuples due to Bevy's system parameter limit
     let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths) = unit_queries;
@@ -324,6 +325,7 @@ fn event_processor_system(
                             *fund = Funds(player.funds);
                         }
                     }
+                    *map_interaction_state = MapInteractionState::Normal;
                     None
                 }
                 Event::EndTurn(_player_number) => {

@@ -375,6 +375,7 @@ impl Game {
         let Some((min_x, min_y, max_x, max_y)) = self.tiles.rect() else {
             return None;
         };
+        let mut visited = HashSet::new();
         let mut result = HashMap::new();
         let mut queue = VecDeque::from([vec![Position(unit_tile.x, unit_tile.y)]]);
 
@@ -382,8 +383,12 @@ impl Game {
             let Some(destination) = path.last() else {
                 continue;
             };
-            if !result.contains_key(destination) && self.unit_can_move_path(unit_id, &path).is_ok()
-            {
+            if visited.contains(destination) {
+                continue;
+            }
+            visited.insert(destination.clone());
+
+            if self.unit_can_move_path(unit_id, &path).is_ok() {
                 for Position(x, y) in destination.adjacent() {
                     if x < min_x
                         || x > max_x

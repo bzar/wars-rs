@@ -77,7 +77,9 @@ fn start_turn(
         .owned_by_player(player_number)
         .filter_map(|(_, tile)| tile.unit.map(|unit_id| (unit_id, tile)))
         .filter_map(|(unit_id, tile)| game.units.get(unit_id).map(|unit| (unit_id, unit, tile)))
-        .filter(|(_, unit, tile)| unit.is_damaged() && tile.can_repair_unit(&unit))
+        .filter(|(_, unit, tile)| {
+            unit.is_damaged() && unit.owner == tile.owner && tile.can_repair_unit(&unit)
+        })
         .map(|(unit_id, mut unit, tile)| {
             let new_unit_health = (unit.health + tile.repair_rate()).min(UNIT_MAX_HEALTH);
             unit.health = new_unit_health;

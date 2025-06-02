@@ -269,6 +269,12 @@ fn tile_click_observer(
                         .expect("Could not move unit");
                         next_state = Some(MapInteractionState::Normal);
                     }
+                } else {
+                    for (_, mut highlight) in unit_highlights.iter_mut() {
+                        *highlight = UnitHighlight::Normal;
+                    }
+                    visible_action_buttons.clear();
+                    next_state = Some(MapInteractionState::Normal);
                 }
             }
         }
@@ -410,7 +416,7 @@ pub fn unit_bundle(
                         .unwrap()
                         .number_index
                 ),
-                Transform::from_xyz(-10.0, 0.0, 0.0)
+                Transform::from_xyz(-10.0, 0.0, 1.0)
             ),
             (
                 OnesDigit,
@@ -419,7 +425,8 @@ pub fn unit_bundle(
                         .health_number(unit.health as usize % 10)
                         .unwrap()
                         .number_index
-                )
+                ),
+                Transform::from_xyz(0.0, 0.0, 1.0)
             )
         ],
     )

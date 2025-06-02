@@ -52,9 +52,8 @@ pub fn weapon(x: Weapon) -> WeaponData<'static> {
                 LightTank => Some(30),
                 MediumTank => Some(20),
                 HeavyTank => Some(10),
-                Interceptor => Some(0),
+                Interceptor | Bomber => None,
                 Copter => Some(25),
-                Bomber => Some(0),
                 LightShip => Some(15),
                 MediumShip => Some(12),
                 HeavyShip => Some(8),
@@ -325,7 +324,7 @@ pub fn movement(x: Movement) -> MovementData<'static> {
         }),
         Flying => Box::new(|_| Some(1)),
         Ship => Box::new(|t| match t {
-            Water | Beach | Port => Some(1),
+            Water | Beach | Port | Bridge => Some(1),
             _ => None,
         }),
     };
@@ -416,7 +415,7 @@ pub fn unit_type(x: UnitType) -> UnitTypeData<'static> {
             Terrain::Plains => Some(10),
             _ => None,
         }),
-        AttackCopter | Interceptor | Bomber => Box::new(|_| Some(0)),
+        AttackCopter | Interceptor | Bomber | TransportCopter => Box::new(|_| Some(0)),
         _ => Box::new(|_| None),
     };
 
@@ -432,8 +431,8 @@ pub fn unit_type(x: UnitType) -> UnitTypeData<'static> {
         HeavyArtillery => &[Weapon::HeavyArtillery],
         AAVehicle => &[Weapon::Machinegun, Weapon::AACannon],
         SAMVehicle => &[Weapon::AAMissile],
-        AttackCopter => &[Weapon::CopterMissile],
-        Interceptor => &[Weapon::Machinegun, Weapon::CopterMissile],
+        AttackCopter => &[Weapon::Machinegun, Weapon::CopterMissile],
+        Interceptor => &[Weapon::InterceptorMissile],
         Bomber => &[Weapon::AerialBomb],
         APC | TransportCopter | CargoShip => &[],
         GunBoat => &[Weapon::HeavyMachinegun, Weapon::MediumCannon],
