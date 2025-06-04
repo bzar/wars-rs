@@ -46,6 +46,15 @@ struct Prop(wars::game::TileId);
 struct Unit(wars::game::UnitId);
 
 #[derive(Component)]
+struct Carrier {
+    load: u32,
+    capacity: u32,
+}
+
+#[derive(Component)]
+struct CarrierSlot(u32);
+
+#[derive(Component)]
 struct DeployEmblem;
 
 #[derive(Component)]
@@ -147,6 +156,8 @@ enum MapAction {
     Capture,
     Deploy,
     Undeploy,
+    Load,
+    Unload,
     Cancel,
 }
 
@@ -252,6 +263,7 @@ fn event_processor_system(
         Query<&mut Moved, With<Unit>>,
         Query<&mut Deployed, With<Unit>>,
         Query<&mut Health, With<Unit>>,
+        Query<&mut Carrier, With<Unit>>,
     ),
     tile_queries: (
         Query<(Entity, &Tile)>,
@@ -264,7 +276,7 @@ fn event_processor_system(
     mut map_interaction_state: ResMut<MapInteractionState>,
 ) {
     // These are in tuples due to Bevy's system parameter limit
-    let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths) = unit_queries;
+    let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths, mut carriers) = unit_queries;
     let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
     ep.state = if let Some(state) = ep.state.take() {
         match state {
@@ -413,8 +425,29 @@ fn event_processor_system(
                     *moved = Moved(true);
                     None
                 }
-                //Event::Load(loaded_unit_id, loading_unit_id) => None,
-                //Event::Unload(unloading_unit_id, unloaded_unit_id, position) => None,
+                Event::Load(unit_id, carrier_id) => {
+                    let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
+                    let carrier_entity_id = find_unit_entity_id(carrier_id).unwrap();
+                    commands.entity(unit_entity_id).despawn();
+
+                    carriers.get_mut(carrier_entity_id).unwrap().load += 1;
+                    None
+                }
+                Event::Unload(carrier_id, unit_id, position) => {
+                    let (_tile_id, tile) = game.tiles.get_at(&position).unwrap();
+                    let theme_tile = theme.tile(&tile).unwrap();
+                    let (tx, ty, tz) = theme.map_hex_center(tile.x, tile.y);
+                    let unit = game.units.get_ref(&unit_id).unwrap();
+                    let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
+                    let (ox, oy) = theme.hex_sprite_center_offset();
+                    commands.spawn((
+                        map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
+                        Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, tz as f32 + 1.5),
+                    ));
+                    let carrier_entity_id = find_unit_entity_id(carrier_id).unwrap();
+                    carriers.get_mut(carrier_entity_id).unwrap().load -= 1;
+                    None
+                }
                 Event::Capture(unit_id, tile_id, capture_points) => {
                     let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
                     let tile_entity_id = find_tile_entity_id(tile_id).unwrap();

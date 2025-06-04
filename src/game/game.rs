@@ -403,12 +403,30 @@ impl Game {
                     queue.push_back(next_path);
                 }
 
-                if self.unit_can_stay_at(unit_id, &destination).is_ok() {
+                if self.unit_can_stay_at(unit_id, &destination).is_ok()
+                    || self.unit_can_load_into_carrier_at(unit_id, destination)
+                {
                     result.insert(destination.clone(), path);
                 }
             }
         }
         Some(result)
+    }
+    pub fn unit_can_load_into_carrier_at(&self, unit_id: UnitId, position: &Position) -> bool {
+        let Some(unit) = self.units.get_ref(&unit_id) else {
+            return false;
+        };
+        let Ok((_, tile)) = self.tiles.get_at(position) else {
+            return false;
+        };
+        let Some(carrier_id) = tile.unit else {
+            return false;
+        };
+        let Some(carrier) = self.units.get_ref(&carrier_id) else {
+            return false;
+        };
+
+        carrier.can_carry(unit)
     }
     pub fn unit_can_stay_at(&self, unit_id: UnitId, coords: &Position) -> ActionResult<()> {
         let (_, tile) = self.tiles.get_at(coords)?;

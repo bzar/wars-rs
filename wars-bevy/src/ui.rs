@@ -61,6 +61,12 @@ fn setup(
                 MapAction::Undeploy,
                 Visibility::Hidden
             ),
+            (button_bundle("Load"), MapAction::Load, Visibility::Hidden),
+            (
+                button_bundle("Unload"),
+                MapAction::Unload,
+                Visibility::Hidden
+            ),
             (
                 button_bundle("Cancel"),
                 MapAction::Cancel,
@@ -279,6 +285,17 @@ fn map_action_button_system(
                     visible_action_buttons.clear();
                     next_state = Some(MapInteractionState::Normal);
                 }
+                // FIXME: handle these
+                MapAction::Load => {
+                    wars::game::action::move_and_load_into(game, unit_id, &path, &mut |e| {
+                        event_processor.queue.push_back(e)
+                    })
+                    .expect("Could not load");
+                    visible_action_buttons.clear();
+                    next_state = Some(MapInteractionState::Normal);
+                }
+                MapAction::Unload => {}
+
                 MapAction::Cancel => {
                     next_state = Some(MapInteractionState::Normal);
                     visible_action_buttons.clear();

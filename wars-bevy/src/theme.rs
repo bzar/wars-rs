@@ -1,3 +1,4 @@
+use bevy::ui::GlobalZIndex;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
 
@@ -96,6 +97,11 @@ pub struct ThemeCaptureBar {
     pub capturing_bit_index: Index,
     pub recovering_bit_index: Index,
 }
+pub struct ThemeCarrierSlot {
+    pub empty_index: Index,
+    pub full_index: Index,
+    pub height: u32,
+}
 pub struct Theme {
     pub spec: ThemeSpec,
     tiles: HashMap<(usize, usize, usize), ThemeTile>,
@@ -104,6 +110,7 @@ pub struct Theme {
     damage_numbers: Vec<ThemeNumber>,
     pub deploy_emblem: ThemeEmblem,
     pub capture_bar: ThemeCaptureBar,
+    pub carrier_slot: ThemeCarrierSlot,
 }
 
 impl From<ThemeSpec> for Theme {
@@ -184,6 +191,15 @@ impl From<ThemeSpec> for Theme {
                 .get(&spec.capture_bar.recovering_name)
                 .unwrap(),
         };
+        let carrier_slot = ThemeCarrierSlot {
+            empty_index: *label_indices
+                .get(&spec.carrier_slot.free_slot_name)
+                .unwrap(),
+            full_index: *label_indices
+                .get(&spec.carrier_slot.occupied_slot_name)
+                .unwrap(),
+            height: spec.carrier_slot.slot_height,
+        };
         Self {
             spec,
             tiles,
@@ -192,6 +208,7 @@ impl From<ThemeSpec> for Theme {
             damage_numbers,
             deploy_emblem,
             capture_bar,
+            carrier_slot,
         }
     }
 }

@@ -1,7 +1,8 @@
 use crate::{
-    BuildMenu, CaptureBar, CaptureBarBit, CaptureState, DeployEmblem, Deployed, EventProcessor,
-    Game, Health, MapAction, MapInteractionState, Moved, OnesDigit, Owner, Prop, SpriteSheet,
-    TensDigit, Theme, Tile, TileHighlight, Unit, UnitHighlight, VisibleActionButtons,
+    BuildMenu, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DeployEmblem,
+    Deployed, EventProcessor, Game, Health, MapAction, MapInteractionState, Moved, OnesDigit,
+    Owner, Prop, SpriteSheet, TensDigit, Theme, Tile, TileHighlight, Unit, UnitHighlight,
+    VisibleActionButtons,
 };
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -19,6 +20,7 @@ impl Plugin for MapPlugin {
                 tile_highlight_system,
                 capture_bar_bit_system,
                 health_number_system,
+                carrier_slot_system,
             ),
         );
     }
@@ -234,6 +236,13 @@ fn tile_click_observer(
                     action_options.insert(MapAction::Capture);
                 }
 
+                if game.unit_can_load_into_carrier_at(unit_id, &position) {
+                    action_options.insert(MapAction::Load);
+                }
+                // FIXME: Actually check if unit can unload
+                if !unit.carried.is_empty() {
+                    action_options.insert(MapAction::Unload);
+                }
                 *visible_action_buttons = VisibleActionButtons(action_options.clone());
                 next_state = Some(MapInteractionState::SelectAction(
                     unit_id,
@@ -378,17 +387,38 @@ fn capture_bar_bit_system(
         }
     }
 }
+fn carrier_slot_system(
+    theme: Res<Theme>,
+    changed_carrier_states: Query<(&Carrier, &Children), Changed<Carrier>>,
+    mut carrier_slots: Query<(&CarrierSlot, &mut Visibility, &mut Sprite)>,
+) {
+    for (carrier, children) in changed_carrier_states.iter() {
+        for &child in children {
+            if let Ok((&CarrierSlot(index), mut visibility, mut sprite)) =
+                carrier_slots.get_mut(child)
+            {
+                *visibility = if carrier.capacity > index {
+                    Visibility::Inherited
+                } else {
+                    Visibility::Hidden
+                };
+                sprite.texture_atlas.as_mut().map(|a| {
+                    a.index = if carrier.load > index {
+                        theme.carrier_slot.full_index
+                    } else {
+                        theme.carrier_slot.empty_index
+                    }
+                });
+            }
+        }
+    }
+}
 pub fn unit_bundle(
     unit_id: wars::game::UnitId,
     unit: &wars::game::Unit,
     theme: &Theme,
     sprite_sheet: &SpriteSheet,
 ) -> impl Bundle {
-    let deploy_emblem_visibility = if unit.deployed {
-        Visibility::Visible
-    } else {
-        Visibility::Hidden
-    };
     let theme_unit = theme.unit(unit.unit_type, unit.owner).unwrap();
     let health = if unit.is_damaged() {
         Health::Damaged(unit.health)
@@ -401,12 +431,16 @@ pub fn unit_bundle(
         Deployed(unit.deployed),
         UnitHighlight::Normal,
         Moved(unit.moved),
+        Carrier {
+            load: unit.carried.len() as u32,
+            capacity: unit.unit_type_data().carry_num,
+        },
         sprite_sheet.sprite(theme_unit.unit_index),
         children![
             (
                 DeployEmblem,
                 sprite_sheet.sprite(theme.deploy_emblem.emblem_index),
-                deploy_emblem_visibility
+                Visibility::Hidden,
             ),
             (
                 TensDigit,
@@ -416,7 +450,8 @@ pub fn unit_bundle(
                         .unwrap()
                         .number_index
                 ),
-                Transform::from_xyz(-10.0, 0.0, 1.0)
+                Transform::from_xyz(-10.0, 0.0, 1.0),
+                Visibility::Hidden,
             ),
             (
                 OnesDigit,
@@ -426,7 +461,20 @@ pub fn unit_bundle(
                         .unwrap()
                         .number_index
                 ),
-                Transform::from_xyz(0.0, 0.0, 1.0)
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                Visibility::Hidden,
+            ),
+            (
+                CarrierSlot(0),
+                sprite_sheet.sprite(theme.carrier_slot.empty_index),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                Visibility::Hidden,
+            ),
+            (
+                CarrierSlot(1),
+                sprite_sheet.sprite(theme.carrier_slot.empty_index),
+                Transform::from_xyz(0.0, theme.carrier_slot.height as f32, 1.0),
+                Visibility::Hidden,
             )
         ],
     )
