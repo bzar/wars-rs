@@ -141,6 +141,12 @@ struct EndTurnButton;
 #[derive(Component)]
 struct MenuBar;
 
+#[derive(Component, Default)]
+struct UnloadMenu(Vec<wars::game::UnitId>);
+
+#[derive(Component, Default)]
+struct UnloadMenuItem(wars::game::UnitId);
+
 #[derive(Component)]
 struct Funds(u32);
 
@@ -184,6 +190,13 @@ enum MapInteractionState {
         HashSet<wars::game::UnitId>,
     ),
     SelectUnitToBuild(wars::game::TileId),
+    SelectUnitToUnload(wars::game::UnitId, Vec<wars::game::Position>),
+    SelectUnloadDestination(
+        wars::game::UnitId,
+        Vec<wars::game::Position>,
+        wars::game::UnitId,
+        HashSet<wars::game::Position>,
+    ),
 }
 
 #[derive(Component)]
@@ -440,12 +453,20 @@ fn event_processor_system(
                     let unit = game.units.get_ref(&unit_id).unwrap();
                     let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
                     let (ox, oy) = theme.hex_sprite_center_offset();
-                    commands.spawn((
-                        map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                        Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, tz as f32 + 1.5),
-                    ));
+                    commands
+                        .spawn((
+                            map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
+                            Transform::from_xyz(
+                                pos.x + ox as f32,
+                                pos.y + oy as f32,
+                                tz as f32 + 1.5,
+                            ),
+                        ))
+                        .insert(Moved(true));
                     let carrier_entity_id = find_unit_entity_id(carrier_id).unwrap();
                     carriers.get_mut(carrier_entity_id).unwrap().load -= 1;
+                    let mut carrier_moved = unit_moveds.get_mut(carrier_entity_id).unwrap();
+                    *carrier_moved = Moved(true);
                     None
                 }
                 Event::Capture(unit_id, tile_id, capture_points) => {

@@ -2,9 +2,13 @@ use std::collections::HashSet;
 
 use crate::{
     BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, MapAction,
-    MapInteractionState, MenuBar, SpriteSheet, Theme, Unit, UnitHighlight, VisibleActionButtons,
+    MapInteractionState, MenuBar, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight,
+    UnloadMenu, UnloadMenuItem, VisibleActionButtons,
 };
-use bevy::{ecs::entity_disabling::Disabled, prelude::*, ui::FocusPolicy};
+use bevy::{
+    core_pipeline::core_3d::ScreenSpaceTransmissionQuality, ecs::entity_disabling::Disabled,
+    prelude::*, ui::FocusPolicy,
+};
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {
@@ -19,6 +23,8 @@ impl Plugin for UIPlugin {
                 build_button_system,
                 disable_build_items_outside_price_range,
                 disabled_button_system,
+                unload_menu_system,
+                unload_menu_item_button_system,
             ),
         );
     }
@@ -102,6 +108,21 @@ fn setup(
         ))
         .id();
 
+    commands.spawn((
+        UnloadMenu::default(),
+        Node {
+            display: Display::Grid,
+            padding: UiRect::all(Val::Px(3.0)),
+            align_self: AlignSelf::Center,
+            justify_self: JustifySelf::Center,
+            border: UiRect::all(Val::Px(2.0)),
+            ..Default::default()
+        },
+        BorderColor(Color::BLACK.with_alpha(0.9)),
+        BackgroundColor(Color::BLACK.with_alpha(0.8)),
+        Visibility::Hidden,
+    ));
+
     let player_number = game.in_turn_number();
     let mut unit_types = enum_iterator::all::<wars::model::UnitType>().collect::<Vec<_>>();
     unit_types.sort_by_key(|t| wars::model::unit_type(*t).price);
@@ -172,6 +193,39 @@ fn button_bundle(text: &str) -> impl Bundle {
     )
 }
 
+fn unload_menu_system(
+    mut commands: Commands,
+    sprite_sheet: Res<SpriteSheet>,
+    game: Res<Game>,
+    theme: Res<Theme>,
+    mut unload_menus: Query<(Entity, &UnloadMenu, &mut Visibility), Changed<UnloadMenu>>,
+) {
+    let Ok((entity_id, UnloadMenu(unit_ids), mut visibility)) = unload_menus.single_mut() else {
+        return;
+    };
+
+    if unit_ids.is_empty() {
+        *visibility = Visibility::Hidden;
+        return;
+    }
+
+    *visibility = Visibility::Inherited;
+
+    let mut entity = commands.entity(entity_id);
+    entity.despawn_related::<Children>();
+
+    for unit_id in unit_ids {
+        let unit = game.units.get_ref(unit_id).unwrap();
+        commands.spawn((
+            ChildOf(entity_id),
+            Button,
+            UnloadMenuItem(*unit_id),
+            children![
+                sprite_sheet.image(theme.unit(unit.unit_type, unit.owner).unwrap().unit_index),
+            ],
+        ));
+    }
+}
 fn funds_display_system(mut funds_query: Query<(&Funds, &mut Text), Changed<Funds>>) {
     for (Funds(funds), mut text) in funds_query.iter_mut() {
         *text = Text(format!("{}", funds));
@@ -210,6 +264,55 @@ fn visible_action_buttons_system(
         };
     }
 }
+
+fn unload_menu_item_button_system(
+    game: Res<Game>,
+    unload_menu_items: Query<
+        (&Interaction, &UnloadMenuItem),
+        (Changed<Interaction>, With<Button>, Without<DisabledButton>),
+    >,
+    mut unload_menus: Query<&mut UnloadMenu>,
+    mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
+    mut state: ResMut<MapInteractionState>,
+) {
+    let MapInteractionState::SelectUnitToUnload(carrier_id, ref path) = *state else {
+        return;
+    };
+
+    let mut next_state = None;
+    for (&interaction, UnloadMenuItem(unit_id)) in unload_menu_items.iter() {
+        if interaction != Interaction::Pressed {
+            continue;
+        }
+
+        let unload_options = game
+            .unit_unload_options(carrier_id, path.last().unwrap(), *unit_id)
+            .unwrap();
+
+        for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
+            let tile = game.tiles.get(*tile_id).unwrap();
+            *highlight = if unload_options.contains(&tile.position()) {
+                TileHighlight::Movable
+            } else {
+                TileHighlight::Unmovable
+            };
+        }
+
+        next_state = Some(MapInteractionState::SelectUnloadDestination(
+            carrier_id,
+            path.clone(),
+            *unit_id,
+            unload_options,
+        ));
+    }
+
+    if let Some(next_state) = next_state {
+        let mut unload_menu = unload_menus.single_mut().unwrap();
+        *unload_menu = UnloadMenu::default();
+        *state = next_state;
+    }
+}
+
 fn build_button_system(
     game: ResMut<Game>,
     mut event_processor: ResMut<EventProcessor>,
@@ -249,6 +352,7 @@ fn map_action_button_system(
     mut state: ResMut<MapInteractionState>,
     mut event_processor: ResMut<EventProcessor>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
+    mut unload_menus: Query<&mut UnloadMenu>,
 ) {
     let MapInteractionState::SelectAction(unit_id, ref path, ref options, ref attack_options) =
         *state
@@ -285,7 +389,6 @@ fn map_action_button_system(
                     visible_action_buttons.clear();
                     next_state = Some(MapInteractionState::Normal);
                 }
-                // FIXME: handle these
                 MapAction::Load => {
                     wars::game::action::move_and_load_into(game, unit_id, &path, &mut |e| {
                         event_processor.queue.push_back(e)
@@ -294,7 +397,25 @@ fn map_action_button_system(
                     visible_action_buttons.clear();
                     next_state = Some(MapInteractionState::Normal);
                 }
-                MapAction::Unload => {}
+                MapAction::Unload => {
+                    let carried = game
+                        .units
+                        .get(unit_id)
+                        .unwrap()
+                        .carried
+                        .into_iter()
+                        .filter(|carried_id| {
+                            game.unit_unload_options(unit_id, path.last().unwrap(), *carried_id)
+                                .is_some_and(|options| !options.is_empty())
+                        })
+                        .collect();
+                    let mut menu = unload_menus.single_mut().unwrap();
+                    *menu = UnloadMenu(carried);
+                    next_state = Some(MapInteractionState::SelectUnitToUnload(
+                        unit_id,
+                        path.clone(),
+                    ));
+                }
 
                 MapAction::Cancel => {
                     next_state = Some(MapInteractionState::Normal);

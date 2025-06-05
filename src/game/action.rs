@@ -530,6 +530,7 @@ pub fn move_and_unload(
     if !carrier.carried.contains(&carried_id)
         || unload_position.distance_to(path.last().ok_or(ActionError::InvalidPath)?) != 1
         || !carried.can_move_on_terrain(unload_tile.terrain)
+        || unload_tile.unit.is_some()
     {
         return Err(ActionError::CannotUnload);
     }

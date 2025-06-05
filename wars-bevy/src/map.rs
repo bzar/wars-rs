@@ -293,6 +293,30 @@ fn tile_click_observer(
                 .for_each(|(_, mut v)| *v = Visibility::Hidden);
             next_state = Some(MapInteractionState::Normal);
         }
+        MapInteractionState::SelectUnitToUnload(_carrier_id, ref _path) => {}
+        MapInteractionState::SelectUnloadDestination(
+            carrier_id,
+            ref path,
+            unit_id,
+            ref unload_options,
+        ) => {
+            if unload_options.contains(&position) {
+                wars::game::action::move_and_unload(
+                    &mut game.into_inner().0,
+                    carrier_id,
+                    path,
+                    unit_id,
+                    position,
+                    &mut |e| event_processor.queue.push_back(e),
+                )
+                .expect("Could not unload unit");
+                visible_action_buttons.clear();
+                for (_, mut highlight) in tile_highlights.iter_mut() {
+                    *highlight = TileHighlight::Normal;
+                }
+                next_state = Some(MapInteractionState::Normal);
+            }
+        }
     };
     if let Some(next_state) = next_state {
         *state = next_state;
@@ -464,6 +488,7 @@ pub fn unit_bundle(
                 Transform::from_xyz(0.0, 0.0, 1.0),
                 Visibility::Hidden,
             ),
+            // TODO: Support more than two slots
             (
                 CarrierSlot(0),
                 sprite_sheet.sprite(theme.carrier_slot.empty_index),

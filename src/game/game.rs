@@ -412,6 +412,28 @@ impl Game {
         }
         Some(result)
     }
+    pub fn unit_unload_options(
+        &self,
+        _carrier_id: UnitId,
+        position: &Position,
+        unit_id: UnitId,
+    ) -> Option<HashSet<Position>> {
+        let unit = self.units.get_ref(&unit_id)?;
+
+        let (_, from_tile) = self.tiles.get_at(position).ok()?;
+
+        if !unit.can_move_on_terrain(from_tile.terrain) {
+            return None;
+        }
+        position
+            .adjacent()
+            .filter_map(|p| self.tiles.get_at(&p).ok().map(|(_, t)| (p, t)))
+            .filter_map(|(p, t)| {
+                (t.unit.is_none() && unit.can_move_on_terrain(t.terrain)).then_some(p)
+            })
+            .collect::<HashSet<_>>()
+            .into()
+    }
     pub fn unit_can_load_into_carrier_at(&self, unit_id: UnitId, position: &Position) -> bool {
         let Some(unit) = self.units.get_ref(&unit_id) else {
             return false;
