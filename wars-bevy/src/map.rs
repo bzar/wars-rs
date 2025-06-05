@@ -1,8 +1,8 @@
 use crate::{
     BuildMenu, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DeployEmblem,
-    Deployed, EventProcessor, Game, Health, MapAction, MapInteractionState, Moved, OnesDigit,
-    Owner, Prop, SpriteSheet, TensDigit, Theme, Tile, TileHighlight, Unit, UnitHighlight,
-    VisibleActionButtons,
+    Deployed, EventProcessor, Game, Health, InputLayer, MapAction, MapInteractionState, Moved,
+    OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme, Tile, TileHighlight, Unit,
+    UnitHighlight, VisibleActionButtons,
 };
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -164,6 +164,7 @@ fn tile_click_observer(
     trigger: Trigger<Pointer<Click>>,
     tile_query: Query<&Tile>,
     game: ResMut<Game>,
+    input_layer: Res<InputLayer>,
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
     mut state: ResMut<MapInteractionState>,
     mut event_processor: ResMut<EventProcessor>,
@@ -171,6 +172,9 @@ fn tile_click_observer(
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
     mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
 ) {
+    if *input_layer == InputLayer::UI {
+        return;
+    }
     info!("{trigger:?}");
     let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) else {
         info!("{}", trigger.target());
@@ -220,7 +224,11 @@ fn tile_click_observer(
             if let Some(path) = destinations.get(&position) {
                 let unit = game.units.get_ref(&unit_id).unwrap();
                 let mut action_options: HashSet<MapAction> =
-                    [MapAction::Wait, MapAction::Cancel].into_iter().collect();
+                    [MapAction::Cancel].into_iter().collect();
+
+                if game.unit_can_stay_at(unit_id, &position).is_ok() {
+                    action_options.insert(MapAction::Wait);
+                }
                 if unit.can_deploy() {
                     if unit.deployed {
                         action_options.insert(MapAction::Undeploy);

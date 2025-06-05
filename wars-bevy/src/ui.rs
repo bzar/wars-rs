@@ -1,9 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-    BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, MapAction,
-    MapInteractionState, MenuBar, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight,
-    UnloadMenu, UnloadMenuItem, VisibleActionButtons,
+    BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, InputLayer,
+    MapAction, MapInteractionState, MenuBar, SpriteSheet, Theme, Tile, TileHighlight, Unit,
+    UnitHighlight, UnloadMenu, UnloadMenuItem, VisibleActionButtons,
 };
 use bevy::{
     core_pipeline::core_3d::ScreenSpaceTransmissionQuality, ecs::entity_disabling::Disabled,
@@ -25,6 +25,7 @@ impl Plugin for UIPlugin {
                 disabled_button_system,
                 unload_menu_system,
                 unload_menu_item_button_system,
+                input_layer_system,
             ),
         );
     }
@@ -193,6 +194,21 @@ fn button_bundle(text: &str) -> impl Bundle {
     )
 }
 
+// Necessary to move click focus between UI and Game to avoid clicks being handled by both
+fn input_layer_system(
+    mut input_layer: ResMut<InputLayer>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    node_interactions: Query<&Interaction, With<Node>>,
+) {
+    if mouse_buttons.pressed(MouseButton::Left) || mouse_buttons.pressed(MouseButton::Right) {
+        return;
+    }
+    *input_layer = if node_interactions.iter().all(|&i| i == Interaction::None) {
+        InputLayer::Game
+    } else {
+        InputLayer::UI
+    };
+}
 fn unload_menu_system(
     mut commands: Commands,
     sprite_sheet: Res<SpriteSheet>,

@@ -211,6 +211,11 @@ struct DisabledButton;
 #[derive(Component)]
 struct BuildItem(wars::model::UnitType);
 
+#[derive(Resource, Eq, PartialEq)]
+enum InputLayer {
+    UI,
+    Game,
+}
 mod camera;
 mod map;
 mod ui;
@@ -233,6 +238,7 @@ fn main() {
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
         .insert_resource(VisibleActionButtons::default())
+        .insert_resource(InputLayer::Game)
         .add_plugins((camera::CameraPlugin, map::MapPlugin, ui::UIPlugin))
         .add_systems(PreStartup, setup)
         .add_systems(Update, (event_processor_system,))
