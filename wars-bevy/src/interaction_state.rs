@@ -66,6 +66,7 @@ pub enum InteractionEvent {
     SelectUnloadUnit(Vec<UnitId>),
     SelectUnloadDestination(HashSet<Position>),
     SelectUnitToBuild(HashSet<UnitClass>),
+    CancelSelectUnitToBuild,
     BuildUnit(TileId, UnitType),
 }
 impl InteractionState {
@@ -73,7 +74,7 @@ impl InteractionState {
         &mut self,
         game: &Game,
         tile_id: TileId,
-        emit: impl FnMut(InteractionEvent),
+        mut emit: impl FnMut(InteractionEvent),
     ) {
         *self = match self.consume() {
             InteractionState::Initial => select_unit_or_base(game, tile_id, emit),
@@ -100,6 +101,10 @@ impl InteractionState {
                 unload_options,
                 emit,
             ),
+            InteractionState::SelectUnitToBuild { .. } => {
+                emit(InteractionEvent::CancelSelectUnitToBuild);
+                InteractionState::Initial
+            }
             other @ _ => other,
         };
     }

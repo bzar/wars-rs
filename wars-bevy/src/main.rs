@@ -654,6 +654,11 @@ fn interaction_event_system(
                     .iter_mut()
                     .for_each(|(_, mut v)| *v = Visibility::Hidden);
             }
+            InteractionEvent::CancelSelectUnitToBuild => {
+                build_menus
+                    .iter_mut()
+                    .for_each(|(_, mut v)| *v = Visibility::Hidden);
+            }
         }
     }
 }
