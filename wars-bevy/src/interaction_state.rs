@@ -60,15 +60,19 @@ pub enum InteractionEvent {
     Undeploy(UnitId),
     MoveAndLoadInto(UnitId, Vec<Position>),
     MoveAndUnloadUnitTo(UnitId, Vec<Position>, UnitId, Position),
+    BuildUnit(TileId, UnitType),
     SelectDestination(HashSet<Position>),
     CancelSelectDestination,
     SelectAction(HashSet<MapAction>),
+    CancelSelectAction,
     SelectAttackTarget(HashSet<UnitId>),
+    CancelSelectAttackTarget,
     SelectUnloadUnit(Vec<UnitId>),
+    CancelSelectUnloadUnit,
     SelectUnloadDestination(HashSet<Position>),
+    CancelSelectUnloadDestination,
     SelectUnitToBuild(HashSet<UnitClass>),
     CancelSelectUnitToBuild,
-    BuildUnit(TileId, UnitType),
 }
 impl InteractionState {
     pub fn select_tile(
@@ -114,7 +118,7 @@ impl InteractionState {
         &mut self,
         game: &Game,
         action: MapAction,
-        emit: impl FnMut(InteractionEvent),
+        mut emit: impl FnMut(InteractionEvent),
     ) {
         *self = match self.consume() {
             InteractionState::SelectAction {
@@ -131,6 +135,26 @@ impl InteractionState {
                 attack_options,
                 emit,
             ),
+            InteractionState::SelectDestination { .. } if action == MapAction::Cancel => {
+                emit(InteractionEvent::CancelSelectDestination);
+                InteractionState::Initial
+            }
+            InteractionState::SelectAttackTarget { .. } if action == MapAction::Cancel => {
+                emit(InteractionEvent::CancelSelectAttackTarget);
+                InteractionState::Initial
+            }
+            InteractionState::SelectUnitToBuild { .. } if action == MapAction::Cancel => {
+                emit(InteractionEvent::CancelSelectUnitToBuild);
+                InteractionState::Initial
+            }
+            InteractionState::SelectUnitToUnload { .. } if action == MapAction::Cancel => {
+                emit(InteractionEvent::CancelSelectUnloadUnit);
+                InteractionState::Initial
+            }
+            InteractionState::SelectUnloadDestination { .. } if action == MapAction::Cancel => {
+                emit(InteractionEvent::CancelSelectUnloadDestination);
+                InteractionState::Initial
+            }
             other @ _ => other,
         };
     }
@@ -338,7 +362,10 @@ fn select_action(
                 path,
             }
         }
-        MapAction::Cancel => todo!(),
+        MapAction::Cancel => {
+            emit(InteractionEvent::CancelSelectAction);
+            InteractionState::Initial
+        }
     }
 }
 

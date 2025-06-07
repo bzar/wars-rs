@@ -531,6 +531,7 @@ fn interaction_event_system(
                 .expect("Could not move unit");
             }
             InteractionEvent::MoveAndAttack(unit_id, ref path, target_id) => {
+                visible_action_buttons.clear();
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
                 }
@@ -579,6 +580,7 @@ fn interaction_event_system(
                 .expect("Could not load into unit");
             }
             InteractionEvent::MoveAndUnloadUnitTo(carrier_id, ref path, unit_id, position) => {
+                visible_action_buttons.clear();
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }
@@ -593,6 +595,7 @@ fn interaction_event_system(
                 .expect("Could not unload carried unit");
             }
             InteractionEvent::SelectDestination(ref options) => {
+                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
                     *highlight = if options.contains(&tile.position()) {
@@ -614,7 +617,7 @@ fn interaction_event_system(
                 *visible_action_buttons = VisibleActionButtons(options.clone());
             }
             InteractionEvent::SelectAttackTarget(ref options) => {
-                visible_action_buttons.clear();
+                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
                     *highlight = if options.contains(&uid) {
                         UnitHighlight::Target
@@ -624,11 +627,12 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::SelectUnloadUnit(ref options) => {
-                visible_action_buttons.clear();
+                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 let mut menu = unload_menus.single_mut().unwrap();
                 *menu = UnloadMenu(options.clone());
             }
             InteractionEvent::SelectUnloadDestination(ref options) => {
+                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 unload_menus.single_mut().unwrap().clear();
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
@@ -640,6 +644,7 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::SelectUnitToBuild(ref unit_classes) => {
+                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 let (mut build_menu, mut visibility) =
                     build_menus.single_mut().expect("Build menu does not exist");
                 *visibility = Visibility::Inherited;
@@ -663,6 +668,22 @@ fn interaction_event_system(
                 build_menus
                     .iter_mut()
                     .for_each(|(_, mut v)| *v = Visibility::Hidden);
+            }
+            InteractionEvent::CancelSelectAction => {
+                visible_action_buttons.clear();
+            }
+            InteractionEvent::CancelSelectAttackTarget => {
+                for (_, mut highlight) in unit_highlights.iter_mut() {
+                    *highlight = UnitHighlight::Normal;
+                }
+            }
+            InteractionEvent::CancelSelectUnloadUnit => {
+                unload_menus.single_mut().unwrap().clear();
+            }
+            InteractionEvent::CancelSelectUnloadDestination => {
+                for (_, mut highlight) in tile_highlights.iter_mut() {
+                    *highlight = TileHighlight::Normal;
+                }
             }
         }
     }
