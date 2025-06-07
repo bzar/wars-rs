@@ -4,6 +4,7 @@ use crate::{
     BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, InputLayer,
     MapAction, MapInteractionState, MenuBar, SpriteSheet, Theme, Tile, TileHighlight, Unit,
     UnitHighlight, UnloadMenu, UnloadMenuItem, VisibleActionButtons,
+    interaction_state::{InteractionEvent, InteractionState},
 };
 use bevy::{
     core_pipeline::core_3d::ScreenSpaceTransmissionQuality, ecs::entity_disabling::Disabled,
@@ -287,185 +288,51 @@ fn unload_menu_item_button_system(
         (&Interaction, &UnloadMenuItem),
         (Changed<Interaction>, With<Button>, Without<DisabledButton>),
     >,
-    mut unload_menus: Query<&mut UnloadMenu>,
-    mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
-    mut state: ResMut<MapInteractionState>,
+    mut interaction_state: ResMut<InteractionState>,
+    mut events: EventWriter<InteractionEvent>,
 ) {
-    let MapInteractionState::SelectUnitToUnload(carrier_id, ref path) = *state else {
-        return;
-    };
-
-    let mut next_state = None;
     for (&interaction, UnloadMenuItem(unit_id)) in unload_menu_items.iter() {
         if interaction != Interaction::Pressed {
             continue;
         }
 
-        let unload_options = game
-            .unit_unload_options(carrier_id, path.last().unwrap(), *unit_id)
-            .unwrap();
-
-        for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
-            let tile = game.tiles.get(*tile_id).unwrap();
-            *highlight = if unload_options.contains(&tile.position()) {
-                TileHighlight::Movable
-            } else {
-                TileHighlight::Unmovable
-            };
-        }
-
-        next_state = Some(MapInteractionState::SelectUnloadDestination(
-            carrier_id,
-            path.clone(),
-            *unit_id,
-            unload_options,
-        ));
-    }
-
-    if let Some(next_state) = next_state {
-        let mut unload_menu = unload_menus.single_mut().unwrap();
-        *unload_menu = UnloadMenu::default();
-        *state = next_state;
+        interaction_state.select_unit_to_unload(&game, *unit_id, |event| {
+            events.write(event);
+        });
     }
 }
 
 fn build_button_system(
-    game: ResMut<Game>,
-    mut event_processor: ResMut<EventProcessor>,
+    game: Res<Game>,
+    mut interaction_state: ResMut<InteractionState>,
     build_buttons: Query<
         (&Interaction, &BuildItem),
         (Changed<Interaction>, With<Button>, Without<DisabledButton>),
     >,
-    mut state: ResMut<MapInteractionState>,
-    mut build_menu_visibility: Query<&mut Visibility, With<BuildMenu>>,
+    mut events: EventWriter<InteractionEvent>,
 ) {
-    let MapInteractionState::SelectUnitToBuild(tile_id) = *state else {
-        return;
-    };
-
-    let tile = game.tiles.get(tile_id).unwrap();
-
     let presses = build_buttons
         .iter()
         .filter_map(|(i, bi)| (*i == Interaction::Pressed).then_some(bi));
-    let game = &mut game.into_inner().0;
+
     for BuildItem(unit_type) in presses {
-        wars::game::action::build(game, tile.position(), *unit_type, &mut |e| {
-            event_processor.queue.push_back(e)
-        })
-        .expect("Could not build unit");
-        *state = MapInteractionState::Normal;
-        build_menu_visibility
-            .iter_mut()
-            .for_each(|mut v| *v = Visibility::Hidden);
-        break;
+        interaction_state.select_unit_type_to_build(&game, *unit_type, |event| {
+            events.write(event);
+        });
     }
 }
 fn map_action_button_system(
     action_buttons: Query<(&Interaction, &MapAction), (Changed<Interaction>, With<Button>)>,
-    game: ResMut<Game>,
-    mut visible_action_buttons: ResMut<VisibleActionButtons>,
-    mut state: ResMut<MapInteractionState>,
-    mut event_processor: ResMut<EventProcessor>,
-    mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
-    mut unload_menus: Query<&mut UnloadMenu>,
+    game: Res<Game>,
+    mut interaction_state: ResMut<InteractionState>,
+    mut events: EventWriter<InteractionEvent>,
 ) {
-    let MapInteractionState::SelectAction(unit_id, ref path, ref options, ref attack_options) =
-        *state
-    else {
-        return;
-    };
-    let game = &mut game.into_inner().0;
-    let mut next_state = None;
     for (interaction, action) in action_buttons.iter() {
-        if *interaction == Interaction::Pressed && options.contains(action) {
-            info!("Pressed action {action:?}");
-            match action {
-                MapAction::Wait => {
-                    wars::game::action::move_and_wait(game, unit_id, &path, &mut |e| {
-                        event_processor.queue.push_back(e)
-                    })
-                    .expect("Could not move unit");
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-                MapAction::Deploy => {
-                    wars::game::action::move_and_deploy(game, unit_id, &path, &mut |e| {
-                        event_processor.queue.push_back(e)
-                    })
-                    .expect("Could not deploy");
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-                MapAction::Undeploy => {
-                    wars::game::action::undeploy(game, unit_id, &mut |e| {
-                        event_processor.queue.push_back(e)
-                    })
-                    .expect("Could not undeploy");
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-                MapAction::Load => {
-                    wars::game::action::move_and_load_into(game, unit_id, &path, &mut |e| {
-                        event_processor.queue.push_back(e)
-                    })
-                    .expect("Could not load");
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-                MapAction::Unload => {
-                    let carried = game
-                        .units
-                        .get(unit_id)
-                        .unwrap()
-                        .carried
-                        .into_iter()
-                        .filter(|carried_id| {
-                            game.unit_unload_options(unit_id, path.last().unwrap(), *carried_id)
-                                .is_some_and(|options| !options.is_empty())
-                        })
-                        .collect();
-                    let mut menu = unload_menus.single_mut().unwrap();
-                    *menu = UnloadMenu(carried);
-                    next_state = Some(MapInteractionState::SelectUnitToUnload(
-                        unit_id,
-                        path.clone(),
-                    ));
-                }
-
-                MapAction::Cancel => {
-                    next_state = Some(MapInteractionState::Normal);
-                    visible_action_buttons.clear();
-                }
-                MapAction::Attack => {
-                    next_state = Some(MapInteractionState::SelectAttackTarget(
-                        unit_id,
-                        path.clone(),
-                        attack_options.clone(),
-                    ));
-                    for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
-                        *highlight = if attack_options.contains(&uid) {
-                            UnitHighlight::Target
-                        } else {
-                            UnitHighlight::Normal
-                        };
-                    }
-                    visible_action_buttons.clear();
-                }
-                MapAction::Capture => {
-                    wars::game::action::move_and_capture(game, unit_id, &path, &mut |e| {
-                        event_processor.queue.push_back(e)
-                    })
-                    .expect("Could not capture");
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-            }
+        if *interaction == Interaction::Pressed {
+            interaction_state.select_action(&game, *action, |event| {
+                events.write(event);
+            });
         }
-    }
-
-    if let Some(next_state) = next_state {
-        *state = next_state;
     }
 }
 

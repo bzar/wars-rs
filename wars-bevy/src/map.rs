@@ -3,6 +3,7 @@ use crate::{
     Deployed, EventProcessor, Game, Health, InputLayer, MapAction, MapInteractionState, Moved,
     OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme, Tile, TileHighlight, Unit,
     UnitHighlight, VisibleActionButtons,
+    interaction_state::{InteractionEvent, InteractionState},
 };
 use bevy::prelude::*;
 use std::collections::HashSet;
@@ -163,172 +164,21 @@ fn tile_highlight_system(
 fn tile_click_observer(
     trigger: Trigger<Pointer<Click>>,
     tile_query: Query<&Tile>,
-    game: ResMut<Game>,
+    game: Res<Game>,
     input_layer: Res<InputLayer>,
-    mut visible_action_buttons: ResMut<VisibleActionButtons>,
-    mut state: ResMut<MapInteractionState>,
-    mut event_processor: ResMut<EventProcessor>,
-    mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
-    mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
-    mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
+    mut interaction_state: ResMut<InteractionState>,
+    mut events: EventWriter<InteractionEvent>,
 ) {
     if *input_layer == InputLayer::UI {
         return;
     }
-    info!("{trigger:?}");
     let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) else {
-        info!("{}", trigger.target());
         return;
     };
-    let tile = game.tiles.get(*tile_id).unwrap();
-    let position = wars::game::Position(tile.x, tile.y);
-    info!("{tile:?}");
 
-    let mut next_state = None;
-    match *state {
-        MapInteractionState::Normal => {
-            if let Some(unit_id) = tile.unit {
-                let unit = game.units.get(unit_id).unwrap();
-                if unit.owner == game.in_turn_number() && !unit.moved {
-                    if let Some(destinations) = game.unit_move_options(unit_id) {
-                        for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
-                            let tile = game.tiles.get(*tile_id).unwrap();
-                            *highlight = if destinations.contains_key(&tile.position()) {
-                                TileHighlight::Movable
-                            } else {
-                                TileHighlight::Unmovable
-                            };
-                        }
-                        next_state = Some(MapInteractionState::SelectDestination(
-                            unit_id,
-                            destinations,
-                        ))
-                    }
-                }
-            } else if !tile.terrain_data().build_classes.is_empty()
-                && tile.owner == game.in_turn_number()
-            {
-                if let Ok((mut build_menu, mut visibility)) = build_menus.single_mut() {
-                    *visibility = Visibility::Inherited;
-                    build_menu.price_limit = game.in_turn_player().unwrap().funds;
-                    build_menu.unit_classes =
-                        tile.terrain_data().build_classes.iter().copied().collect();
-                }
-                next_state = Some(MapInteractionState::SelectUnitToBuild(*tile_id));
-            }
-        }
-        MapInteractionState::SelectDestination(unit_id, ref destinations) => {
-            for (_, mut highlight) in tile_highlights.iter_mut() {
-                *highlight = TileHighlight::Normal;
-            }
-            if let Some(path) = destinations.get(&position) {
-                let unit = game.units.get_ref(&unit_id).unwrap();
-                let mut action_options: HashSet<MapAction> =
-                    [MapAction::Cancel].into_iter().collect();
-
-                if game.unit_can_stay_at(unit_id, &position).is_ok() {
-                    action_options.insert(MapAction::Wait);
-                }
-                if unit.can_deploy() {
-                    if unit.deployed {
-                        action_options.insert(MapAction::Undeploy);
-                    } else {
-                        action_options.insert(MapAction::Deploy);
-                    }
-                }
-                let attack_options = game.unit_attack_options(unit_id, &position);
-                if !attack_options.is_empty() {
-                    action_options.insert(MapAction::Attack);
-                }
-                if game.unit_can_capture_tile(unit_id, *tile_id).is_ok() {
-                    action_options.insert(MapAction::Capture);
-                }
-
-                if game.unit_can_load_into_carrier_at(unit_id, &position) {
-                    action_options.insert(MapAction::Load);
-                }
-                // FIXME: Actually check if unit can unload
-                if !unit.carried.is_empty() {
-                    action_options.insert(MapAction::Unload);
-                }
-                *visible_action_buttons = VisibleActionButtons(action_options.clone());
-                next_state = Some(MapInteractionState::SelectAction(
-                    unit_id,
-                    path.clone(),
-                    action_options,
-                    attack_options,
-                ));
-            } else {
-                next_state = Some(MapInteractionState::Normal);
-            }
-        }
-        MapInteractionState::SelectAction(
-            _unit_id,
-            ref _path,
-            ref _action_options,
-            ref _attack_options,
-        ) => {}
-        MapInteractionState::SelectAttackTarget(unit_id, ref path, ref attack_options) => {
-            if let Ok((_, target_tile)) = game.tiles.get_at(&position) {
-                if let Some(target_id) = target_tile.unit {
-                    if attack_options.contains(&target_id) {
-                        for (_, mut highlight) in unit_highlights.iter_mut() {
-                            *highlight = UnitHighlight::Normal;
-                        }
-                        visible_action_buttons.clear();
-                        wars::game::action::move_and_attack(
-                            &mut game.into_inner().0,
-                            unit_id,
-                            path,
-                            target_id,
-                            &mut |e| event_processor.queue.push_back(e),
-                        )
-                        .expect("Could not move unit");
-                        next_state = Some(MapInteractionState::Normal);
-                    }
-                } else {
-                    for (_, mut highlight) in unit_highlights.iter_mut() {
-                        *highlight = UnitHighlight::Normal;
-                    }
-                    visible_action_buttons.clear();
-                    next_state = Some(MapInteractionState::Normal);
-                }
-            }
-        }
-        MapInteractionState::SelectUnitToBuild(_tile_id) => {
-            build_menus
-                .iter_mut()
-                .for_each(|(_, mut v)| *v = Visibility::Hidden);
-            next_state = Some(MapInteractionState::Normal);
-        }
-        MapInteractionState::SelectUnitToUnload(_carrier_id, ref _path) => {}
-        MapInteractionState::SelectUnloadDestination(
-            carrier_id,
-            ref path,
-            unit_id,
-            ref unload_options,
-        ) => {
-            if unload_options.contains(&position) {
-                wars::game::action::move_and_unload(
-                    &mut game.into_inner().0,
-                    carrier_id,
-                    path,
-                    unit_id,
-                    position,
-                    &mut |e| event_processor.queue.push_back(e),
-                )
-                .expect("Could not unload unit");
-                visible_action_buttons.clear();
-                for (_, mut highlight) in tile_highlights.iter_mut() {
-                    *highlight = TileHighlight::Normal;
-                }
-                next_state = Some(MapInteractionState::Normal);
-            }
-        }
-    };
-    if let Some(next_state) = next_state {
-        *state = next_state;
-    }
+    interaction_state.select_tile(&game, *tile_id, |event| {
+        events.write(event);
+    });
 }
 
 fn health_number_system(

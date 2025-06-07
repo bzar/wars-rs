@@ -1,10 +1,14 @@
 use bevy::prelude::*;
-use std::collections::{HashMap, HashSet, VecDeque};
+use interaction_state::{InteractionEvent, InteractionState};
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    ops::DerefMut,
+};
 use wars::model::UNIT_MAX_HEALTH;
 
 mod theme;
 
-#[derive(Resource, Deref)]
+#[derive(Resource, Deref, DerefMut)]
 struct Game(wars::game::Game);
 
 #[derive(Resource, Deref)]
@@ -141,7 +145,7 @@ struct EndTurnButton;
 #[derive(Component)]
 struct MenuBar;
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Deref, DerefMut)]
 struct UnloadMenu(Vec<wars::game::UnitId>);
 
 #[derive(Component, Default)]
@@ -155,7 +159,7 @@ impl Funds {
         Self(self.0.saturating_sub(amount))
     }
 }
-#[derive(Component, Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum MapAction {
     Wait,
     Attack,
@@ -217,6 +221,7 @@ enum InputLayer {
     Game,
 }
 mod camera;
+mod interaction_state;
 mod map;
 mod ui;
 
@@ -234,14 +239,16 @@ fn main() {
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .insert_resource(Game(game))
         .insert_resource(Theme(theme))
+        .insert_resource(InteractionState::default())
         .insert_resource(MapInteractionState::default())
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
         .insert_resource(VisibleActionButtons::default())
         .insert_resource(InputLayer::Game)
+        .add_event::<InteractionEvent>()
         .add_plugins((camera::CameraPlugin, map::MapPlugin, ui::UIPlugin))
         .add_systems(PreStartup, setup)
-        .add_systems(Update, (event_processor_system,))
+        .add_systems(Update, (event_processor_system, interaction_event_system))
         .run();
 }
 
@@ -527,6 +534,158 @@ fn event_processor_system(
     }
 }
 
+fn interaction_event_system(
+    mut events: EventReader<InteractionEvent>,
+    mut event_processor: ResMut<EventProcessor>,
+    mut game: ResMut<Game>,
+    mut visible_action_buttons: ResMut<VisibleActionButtons>,
+    mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
+    mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
+    mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
+    mut unload_menus: Query<&mut UnloadMenu>,
+) {
+    for event in events.read() {
+        info!("Interaction event: {event:?}");
+
+        let mut event_handler = |e| event_processor.queue.push_back(e);
+        match *event {
+            InteractionEvent::MoveAndWait(unit_id, ref path) => {
+                visible_action_buttons.clear();
+                wars::game::action::move_and_wait(
+                    game.deref_mut(),
+                    unit_id,
+                    &path,
+                    &mut event_handler,
+                )
+                .expect("Could not move unit");
+            }
+            InteractionEvent::MoveAndAttack(unit_id, ref path, target_id) => {
+                for (_, mut highlight) in unit_highlights.iter_mut() {
+                    *highlight = UnitHighlight::Normal;
+                }
+                wars::game::action::move_and_attack(
+                    game.deref_mut(),
+                    unit_id,
+                    &path,
+                    target_id,
+                    &mut event_handler,
+                )
+                .expect("Could not attack");
+            }
+            InteractionEvent::MoveAndCapture(unit_id, ref path) => {
+                visible_action_buttons.clear();
+                wars::game::action::move_and_capture(
+                    game.deref_mut(),
+                    unit_id,
+                    &path,
+                    &mut event_handler,
+                )
+                .expect("Could not capture tile");
+            }
+            InteractionEvent::MoveAndDeploy(unit_id, ref path) => {
+                visible_action_buttons.clear();
+                wars::game::action::move_and_deploy(
+                    game.deref_mut(),
+                    unit_id,
+                    &path,
+                    &mut event_handler,
+                )
+                .expect("Could not deploy unit");
+            }
+            InteractionEvent::Undeploy(unit_id) => {
+                visible_action_buttons.clear();
+                wars::game::action::undeploy(game.deref_mut(), unit_id, &mut event_handler)
+                    .expect("Could not undeploy unit");
+            }
+            InteractionEvent::MoveAndLoadInto(unit_id, ref path) => {
+                visible_action_buttons.clear();
+                wars::game::action::move_and_load_into(
+                    game.deref_mut(),
+                    unit_id,
+                    &path,
+                    &mut event_handler,
+                )
+                .expect("Could not load into unit");
+            }
+            InteractionEvent::MoveAndUnloadUnitTo(carrier_id, ref path, unit_id, position) => {
+                for (_, mut highlight) in tile_highlights.iter_mut() {
+                    *highlight = TileHighlight::Normal;
+                }
+                wars::game::action::move_and_unload(
+                    game.deref_mut(),
+                    carrier_id,
+                    &path,
+                    unit_id,
+                    position,
+                    &mut event_handler,
+                )
+                .expect("Could not unload carried unit");
+            }
+            InteractionEvent::SelectDestination(ref options) => {
+                for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
+                    let tile = game.tiles.get(*tile_id).unwrap();
+                    *highlight = if options.contains(&tile.position()) {
+                        TileHighlight::Movable
+                    } else {
+                        TileHighlight::Unmovable
+                    };
+                }
+            }
+            InteractionEvent::SelectAction(ref options) => {
+                for (_, mut highlight) in tile_highlights.iter_mut() {
+                    *highlight = TileHighlight::Normal;
+                }
+                *visible_action_buttons = VisibleActionButtons(options.clone());
+            }
+            InteractionEvent::SelectAttackTarget(ref options) => {
+                visible_action_buttons.clear();
+                for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
+                    *highlight = if options.contains(&uid) {
+                        UnitHighlight::Target
+                    } else {
+                        UnitHighlight::Normal
+                    };
+                }
+            }
+            InteractionEvent::SelectUnloadUnit(ref options) => {
+                visible_action_buttons.clear();
+                let mut menu = unload_menus.single_mut().unwrap();
+                *menu = UnloadMenu(options.clone());
+            }
+            InteractionEvent::SelectUnloadDestination(ref options) => {
+                unload_menus.single_mut().unwrap().clear();
+                for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
+                    let tile = game.tiles.get(*tile_id).unwrap();
+                    *highlight = if options.contains(&tile.position()) {
+                        TileHighlight::Movable
+                    } else {
+                        TileHighlight::Unmovable
+                    };
+                }
+            }
+            InteractionEvent::SelectUnitToBuild(ref unit_classes) => {
+                let (mut build_menu, mut visibility) =
+                    build_menus.single_mut().expect("Build menu does not exist");
+                *visibility = Visibility::Inherited;
+                build_menu.price_limit = game.in_turn_player().unwrap().funds;
+                build_menu.unit_classes = unit_classes.clone();
+            }
+            InteractionEvent::BuildUnit(tile_id, unit_type) => {
+                let tile = game.tiles.get(tile_id).expect("Tile does not exist");
+                wars::game::action::build(
+                    game.deref_mut(),
+                    tile.position(),
+                    unit_type,
+                    &mut event_handler,
+                )
+                .expect("Could not build unit");
+                build_menus
+                    .iter_mut()
+                    .for_each(|(_, mut v)| *v = Visibility::Hidden);
+            }
+        }
+    }
+}
 use bevy::animation::{AnimationTarget, AnimationTargetId, animated_field};
 struct AnimationInfo {
     target_name: Name,

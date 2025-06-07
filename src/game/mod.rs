@@ -34,7 +34,7 @@ pub struct Tiles(HashMap<TileId, Tile>);
 pub struct Units(HashMap<UnitId, Unit>);
 pub struct Players(Vec<Player>);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Position(pub i32, pub i32);
 
 pub struct Game {
