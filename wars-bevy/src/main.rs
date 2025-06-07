@@ -602,6 +602,11 @@ fn interaction_event_system(
                     };
                 }
             }
+            InteractionEvent::CancelSelectDestination => {
+                for (_, mut highlight) in tile_highlights.iter_mut() {
+                    *highlight = TileHighlight::Normal;
+                }
+            }
             InteractionEvent::SelectAction(ref options) => {
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;

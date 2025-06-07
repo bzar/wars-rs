@@ -61,6 +61,7 @@ pub enum InteractionEvent {
     MoveAndLoadInto(UnitId, Vec<Position>),
     MoveAndUnloadUnitTo(UnitId, Vec<Position>, UnitId, Position),
     SelectDestination(HashSet<Position>),
+    CancelSelectDestination,
     SelectAction(HashSet<MapAction>),
     SelectAttackTarget(HashSet<UnitId>),
     SelectUnloadUnit(Vec<UnitId>),
@@ -209,6 +210,7 @@ fn select_destination(
     let position = tile.position();
 
     let Some(path) = destination_options.remove(&position) else {
+        emit(InteractionEvent::CancelSelectDestination);
         return InteractionState::Initial;
     };
 
