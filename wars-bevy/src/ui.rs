@@ -2,14 +2,10 @@ use std::collections::HashSet;
 
 use crate::{
     BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, InputLayer,
-    MapAction, MapInteractionState, MenuBar, SpriteSheet, Theme, Tile, TileHighlight, Unit,
-    UnitHighlight, UnloadMenu, UnloadMenuItem, VisibleActionButtons,
+    MapAction, MenuBar, SpriteSheet, Theme, UnloadMenu, UnloadMenuItem, VisibleActionButtons,
     interaction_state::{InteractionEvent, InteractionState},
 };
-use bevy::{
-    core_pipeline::core_3d::ScreenSpaceTransmissionQuality, ecs::entity_disabling::Disabled,
-    prelude::*, ui::FocusPolicy,
-};
+use bevy::prelude::*;
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {

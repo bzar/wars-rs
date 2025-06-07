@@ -8,6 +8,15 @@ use wars::{
 
 use crate::MapAction;
 
+pub struct InteractionStatePlugin;
+
+impl Plugin for InteractionStatePlugin {
+    fn build(&self, app: &mut App) {
+        app.insert_resource(InteractionState::default())
+            .add_event::<InteractionEvent>();
+    }
+}
+
 #[derive(Resource, Default)]
 pub enum InteractionState {
     #[default]

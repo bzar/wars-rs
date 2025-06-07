@@ -1,7 +1,7 @@
 use bevy::prelude::*;
-use interaction_state::{InteractionEvent, InteractionState};
+use interaction_state::InteractionEvent;
 use std::{
-    collections::{HashMap, HashSet, VecDeque},
+    collections::{HashSet, VecDeque},
     ops::DerefMut,
 };
 use wars::model::UNIT_MAX_HEALTH;
@@ -174,35 +174,6 @@ enum MapAction {
 #[derive(Resource, Default, Deref, DerefMut)]
 struct VisibleActionButtons(HashSet<MapAction>);
 
-#[derive(Resource, Default)]
-enum MapInteractionState {
-    #[default]
-    Normal,
-    SelectDestination(
-        wars::game::UnitId,
-        HashMap<wars::game::Position, Vec<wars::game::Position>>,
-    ),
-    SelectAction(
-        wars::game::UnitId,
-        Vec<wars::game::Position>,
-        HashSet<MapAction>,
-        HashSet<wars::game::UnitId>,
-    ),
-    SelectAttackTarget(
-        wars::game::UnitId,
-        Vec<wars::game::Position>,
-        HashSet<wars::game::UnitId>,
-    ),
-    SelectUnitToBuild(wars::game::TileId),
-    SelectUnitToUnload(wars::game::UnitId, Vec<wars::game::Position>),
-    SelectUnloadDestination(
-        wars::game::UnitId,
-        Vec<wars::game::Position>,
-        wars::game::UnitId,
-        HashSet<wars::game::Position>,
-    ),
-}
-
 #[derive(Component)]
 struct BuildMenu {
     price_limit: u32,
@@ -239,14 +210,16 @@ fn main() {
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .insert_resource(Game(game))
         .insert_resource(Theme(theme))
-        .insert_resource(InteractionState::default())
-        .insert_resource(MapInteractionState::default())
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
         .insert_resource(VisibleActionButtons::default())
         .insert_resource(InputLayer::Game)
-        .add_event::<InteractionEvent>()
-        .add_plugins((camera::CameraPlugin, map::MapPlugin, ui::UIPlugin))
+        .add_plugins((
+            camera::CameraPlugin,
+            map::MapPlugin,
+            ui::UIPlugin,
+            interaction_state::InteractionStatePlugin,
+        ))
         .add_systems(PreStartup, setup)
         .add_systems(Update, (event_processor_system, interaction_event_system))
         .run();
@@ -299,7 +272,6 @@ fn event_processor_system(
     mut funds: Query<&mut Funds>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
     sprite_sheet: Res<SpriteSheet>,
-    mut map_interaction_state: ResMut<MapInteractionState>,
 ) {
     // These are in tuples due to Bevy's system parameter limit
     let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths, mut carriers) = unit_queries;
@@ -363,7 +335,6 @@ fn event_processor_system(
                             *fund = Funds(player.funds);
                         }
                     }
-                    *map_interaction_state = MapInteractionState::Normal;
                     None
                 }
                 Event::EndTurn(_player_number) => {

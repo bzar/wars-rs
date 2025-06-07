@@ -1,12 +1,10 @@
 use crate::{
-    BuildMenu, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DeployEmblem,
-    Deployed, EventProcessor, Game, Health, InputLayer, MapAction, MapInteractionState, Moved,
-    OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme, Tile, TileHighlight, Unit,
-    UnitHighlight, VisibleActionButtons,
+    CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DeployEmblem, Deployed, Game,
+    Health, InputLayer, Moved, OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme, Tile,
+    TileHighlight, Unit, UnitHighlight,
     interaction_state::{InteractionEvent, InteractionState},
 };
 use bevy::prelude::*;
-use std::collections::HashSet;
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
