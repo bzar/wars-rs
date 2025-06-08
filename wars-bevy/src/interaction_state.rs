@@ -254,6 +254,9 @@ fn select_destination(
         action_options.insert(MapAction::Load);
     }
 
+    if game.unit_can_capture_tile(unit_id, tile_id).is_ok() {
+        action_options.insert(MapAction::Capture);
+    }
     if unit.carried.iter().any(|u| {
         game.unit_unload_options(unit_id, &position, *u)
             .is_some_and(|os| !os.is_empty())

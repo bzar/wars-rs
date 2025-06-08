@@ -362,18 +362,16 @@ fn event_processor_system(
                 Event::Move(unit_id, path) => {
                     if path.len() > 1 {
                         let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
-                        let mut unit = commands.entity(unit_entity_id);
                         let (mut animations, mut graphs, _) = animation_params;
-                        let info = move_animation(path, &theme, &mut animations, &mut graphs);
-                        unit.insert((
-                            info.target_name,
-                            AnimationGraphHandle(info.graph),
-                            info.player,
-                            AnimationTarget {
-                                id: info.target_id,
-                                player: unit.id(),
-                            },
-                        ));
+                        apply_animation_to_entity(
+                            commands,
+                            unit_entity_id,
+                            animation_from_translation_curve(
+                                &mut animations,
+                                &mut graphs,
+                                move_animation_curve(path, &theme),
+                            ),
+                        );
                         Some(EventProcess::Animation(unit_entity_id))
                     } else {
                         None
@@ -460,7 +458,22 @@ fn event_processor_system(
                     let mut capture_status = tile_capture_states.get_mut(tile_entity_id).unwrap();
                     *moved = Moved(true);
                     *capture_status = CaptureState::Capturing(capture_points);
-                    None
+
+                    let tile = game.tiles.get(tile_id).unwrap();
+                    let (mut animations, mut graphs, _) = animation_params;
+                    let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
+                    let (ox, oy) = theme.hex_sprite_center_offset();
+                    let position = Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5);
+                    apply_animation_to_entity(
+                        commands,
+                        unit_entity_id,
+                        animation_from_translation_curve(
+                            &mut animations,
+                            &mut graphs,
+                            capture_animation_curve(position),
+                        ),
+                    );
+                    Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Captured(unit_id, tile_id, player_number) => {
                     let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
@@ -471,7 +484,23 @@ fn event_processor_system(
                     *moved = Moved(true);
                     *owner = Owner(player_number.unwrap_or(0));
                     *capture_status = CaptureState::Recovering(1);
-                    None
+
+                    let tile = game.tiles.get(tile_id).unwrap();
+                    let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
+                    let (ox, oy) = theme.hex_sprite_center_offset();
+                    let position = Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5);
+
+                    let (mut animations, mut graphs, _) = animation_params;
+                    apply_animation_to_entity(
+                        commands,
+                        unit_entity_id,
+                        animation_from_translation_curve(
+                            &mut animations,
+                            &mut graphs,
+                            captured_animation_curve(position),
+                        ),
+                    );
+                    Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Build(tile_id, unit_id, _unit_type, credits) => {
                     let tile = game.tiles.get(tile_id).unwrap();
@@ -695,15 +724,11 @@ struct AnimationInfo {
     graph: Handle<AnimationGraph>,
     player: AnimationPlayer,
 }
-fn move_animation(
+
+fn move_animation_curve(
     path: impl IntoIterator<Item = wars::game::Position>,
     theme: &Theme,
-    animations: &mut ResMut<Assets<AnimationClip>>,
-    graphs: &mut ResMut<Assets<AnimationGraph>>,
-) -> AnimationInfo {
-    let mut animation = AnimationClip::default();
-    let target_name = Name::new("unit");
-    let target_id = AnimationTargetId::from_name(&target_name);
+) -> impl AnimationCompatibleCurve<Vec3> {
     let (ox, oy) = theme.hex_sprite_center_offset();
     let waypoints: Vec<Vec3> = path
         .into_iter()
@@ -712,16 +737,39 @@ fn move_animation(
             Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5)
         })
         .collect();
+    SampleAutoCurve::new(
+        Interval::new(0.0, 0.1 * waypoints.len() as f32).unwrap(),
+        waypoints,
+    )
+    .unwrap()
+}
+
+fn capture_animation_curve(position: Vec3) -> impl AnimationCompatibleCurve<Vec3> {
+    EasingCurve::new(0.0, 16.0, EaseFunction::QuadraticOut)
+        .ping_pong()
+        .unwrap()
+        .map(move |y| position + Vec3::Y * y)
+        .reparametrize_linear(Interval::new(0.0, 0.5).unwrap())
+        .unwrap()
+}
+fn captured_animation_curve(position: Vec3) -> impl AnimationCompatibleCurve<Vec3> {
+    capture_animation_curve(position)
+        .repeat(3)
+        .unwrap()
+        .reparametrize_linear(Interval::UNIT)
+        .unwrap()
+}
+fn animation_from_translation_curve<C: AnimationCompatibleCurve<Vec3>>(
+    animations: &mut ResMut<Assets<AnimationClip>>,
+    graphs: &mut ResMut<Assets<AnimationGraph>>,
+    curve: C,
+) -> AnimationInfo {
+    let mut animation = AnimationClip::default();
+    let target_name = Name::new("target");
+    let target_id = AnimationTargetId::from_name(&target_name);
     animation.add_curve_to_target(
         target_id,
-        AnimatableCurve::new(
-            animated_field!(Transform::translation),
-            SampleAutoCurve::new(
-                Interval::new(0.0, 0.1 * waypoints.len() as f32).unwrap(),
-                waypoints,
-            )
-            .unwrap(),
-        ),
+        AnimatableCurve::new(animated_field!(Transform::translation), curve),
     );
     let (graph, animation_index) = AnimationGraph::from_clip(animations.add(animation));
     let graph = graphs.add(graph);
@@ -734,4 +782,16 @@ fn move_animation(
         graph,
         player,
     }
+}
+
+fn apply_animation_to_entity(mut commands: Commands, entity: Entity, info: AnimationInfo) {
+    commands.entity(entity).insert((
+        info.target_name,
+        AnimationGraphHandle(info.graph),
+        info.player,
+        AnimationTarget {
+            id: info.target_id,
+            player: entity,
+        },
+    ));
 }
