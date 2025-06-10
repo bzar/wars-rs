@@ -1,6 +1,7 @@
-use bevy::ui::GlobalZIndex;
+use bevy::prelude::*;
 use serde_derive::Deserialize;
 use std::collections::HashMap;
+use wars::game::Position;
 
 #[derive(Deserialize)]
 pub struct Color {
@@ -249,5 +250,11 @@ impl Theme {
 
     pub fn hex_sprite_center_offset(&self) -> (i32, i32) {
         (0, (self.spec.image.height - self.spec.hex.height) as i32)
+    }
+
+    pub fn unit_position(&self, Position(x, y): &Position) -> Vec3 {
+        let (ox, oy) = self.hex_sprite_center_offset();
+        let (x, y, z) = self.map_hex_center(*x, *y);
+        Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5)
     }
 }

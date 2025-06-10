@@ -250,18 +250,14 @@ fn end_turn_button_system(
         &Interaction,
         (Changed<Interaction>, With<Button>, With<EndTurnButton>),
     >,
-    game: ResMut<Game>,
-    mut event_processor: ResMut<EventProcessor>,
+    mut interaction_state: ResMut<InteractionState>,
+    mut events: EventWriter<InteractionEvent>,
 ) {
-    let Game(game) = &mut game.into_inner();
     for interaction in end_turn_buttons.iter() {
-        match *interaction {
-            Interaction::Pressed => {
-                info!("end turn clicked");
-                wars::game::action::end_turn(game, &mut |e| event_processor.queue.push_back(e))
-                    .expect("Could not start game");
-            }
-            _ => (),
+        if *interaction == Interaction::Pressed {
+            interaction_state.end_turn(|event| {
+                events.write(event);
+            });
         }
     }
 }

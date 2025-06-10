@@ -6,7 +6,12 @@ use std::{
 };
 use wars::model::UNIT_MAX_HEALTH;
 
+mod animation;
+mod camera;
+mod interaction_state;
+mod map;
 mod theme;
+mod ui;
 
 #[derive(Resource, Deref, DerefMut)]
 struct Game(wars::game::Game);
@@ -191,10 +196,6 @@ enum InputLayer {
     UI,
     Game,
 }
-mod camera;
-mod interaction_state;
-mod map;
-mod ui;
 
 fn main() {
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/my-awesome-map.json");
@@ -219,6 +220,7 @@ fn main() {
             map::MapPlugin,
             ui::UIPlugin,
             interaction_state::InteractionStatePlugin,
+            animation::SpriteAnimationPlugin,
         ))
         .add_systems(PreStartup, setup)
         .add_systems(Update, (event_processor_system, interaction_event_system))
@@ -252,11 +254,7 @@ fn event_processor_system(
     mut ep: ResMut<EventProcessor>,
     game: Res<Game>,
     theme: Res<Theme>,
-    animation_params: (
-        ResMut<Assets<AnimationClip>>,
-        ResMut<Assets<AnimationGraph>>,
-        Query<&AnimationPlayer>,
-    ),
+    sprite_animations: Query<&animation::SpriteAnimation>,
     unit_queries: (
         Query<(Entity, &Unit)>,
         Query<&mut Moved, With<Unit>>,
@@ -264,6 +262,7 @@ fn event_processor_system(
         Query<&mut Health, With<Unit>>,
         Query<&mut Carrier, With<Unit>>,
     ),
+    transforms: Query<&Transform>,
     tile_queries: (
         Query<(Entity, &Tile)>,
         Query<&mut Owner, With<Tile>>,
@@ -276,6 +275,7 @@ fn event_processor_system(
     // These are in tuples due to Bevy's system parameter limit
     let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths, mut carriers) = unit_queries;
     let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
+
     ep.state = if let Some(state) = ep.state.take() {
         match state {
             EventProcess::NoOp(event) => {
@@ -283,16 +283,9 @@ fn event_processor_system(
                 None
             }
             EventProcess::Animation(entity) => {
-                let (_, _, players) = animation_params;
-                let player = players.get(entity).unwrap();
-                if player.all_finished() {
+                // The animation has finished or the entity no longer exists
+                if sprite_animations.get(entity).is_err() {
                     info!("Finished animation");
-                    commands.entity(entity).remove::<(
-                        Name,
-                        AnimationPlayer,
-                        AnimationGraphHandle,
-                        AnimationTarget,
-                    )>();
                     None
                 } else {
                     Some(EventProcess::Animation(entity))
@@ -315,6 +308,7 @@ fn event_processor_system(
     };
     if ep.state.is_none() {
         if let Some(event) = ep.queue.pop_front() {
+            info!("Game event: {event:?}");
             use wars::game::Event;
             ep.state = match event {
                 Event::StartTurn(player_number) => {
@@ -362,16 +356,8 @@ fn event_processor_system(
                 Event::Move(unit_id, path) => {
                     if path.len() > 1 {
                         let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
-                        let (mut animations, mut graphs, _) = animation_params;
-                        apply_animation_to_entity(
-                            commands,
-                            unit_entity_id,
-                            animation_from_translation_curve(
-                                &mut animations,
-                                &mut graphs,
-                                move_animation_curve(path, &theme),
-                            ),
-                        );
+                        let waypoints = path.into_iter().map(|pos| theme.unit_position(&pos));
+                        animation::animate_move_unit(&mut commands, unit_entity_id, waypoints);
                         Some(EventProcess::Animation(unit_entity_id))
                     } else {
                         None
@@ -390,19 +376,41 @@ fn event_processor_system(
                     let mut moved = unit_moveds.get_mut(attacking_entity_id).unwrap();
                     *moved = Moved(true);
                     *target_health = target_health.damage(health);
-                    None
+
+                    let attacker_position =
+                        transforms.get(attacking_entity_id).unwrap().translation;
+                    let target_position = transforms.get(target_entity_id).unwrap().translation;
+                    animation::animate_attack(
+                        &mut commands,
+                        attacking_entity_id,
+                        attacker_position,
+                        target_position,
+                        theme.spec.hex.height as f32,
+                    );
+                    Some(EventProcess::Animation(attacking_entity_id))
                 }
-                Event::Counterattack(_attacking_unit_id, target_unit_id, health) => {
+                Event::Counterattack(attacking_unit_id, target_unit_id, health) => {
+                    let attacking_entity_id = find_unit_entity_id(attacking_unit_id).unwrap();
                     let target_entity_id = find_unit_entity_id(target_unit_id).unwrap();
                     let mut target_health = unit_healths.get_mut(target_entity_id).unwrap();
                     *target_health = target_health.damage(health);
-                    None
+
+                    let attacker_position =
+                        transforms.get(attacking_entity_id).unwrap().translation;
+                    let target_position = transforms.get(target_entity_id).unwrap().translation;
+                    animation::animate_attack(
+                        &mut commands,
+                        attacking_entity_id,
+                        attacker_position,
+                        target_position,
+                        theme.spec.hex.height as f32,
+                    );
+                    Some(EventProcess::Animation(attacking_entity_id))
                 }
                 Event::Destroyed(_attacking_unit_id, target_unit_id) => {
                     let unit_entity_id = find_unit_entity_id(target_unit_id).unwrap();
-                    commands.entity(unit_entity_id).despawn();
-
-                    None
+                    animation::animate_destroy(&mut commands, unit_entity_id);
+                    Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Deploy(unit_id) => {
                     let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
@@ -430,19 +438,11 @@ fn event_processor_system(
                 }
                 Event::Unload(carrier_id, unit_id, position) => {
                     let (_tile_id, tile) = game.tiles.get_at(&position).unwrap();
-                    let theme_tile = theme.tile(&tile).unwrap();
-                    let (tx, ty, tz) = theme.map_hex_center(tile.x, tile.y);
                     let unit = game.units.get_ref(&unit_id).unwrap();
-                    let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
-                    let (ox, oy) = theme.hex_sprite_center_offset();
                     commands
                         .spawn((
                             map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                            Transform::from_xyz(
-                                pos.x + ox as f32,
-                                pos.y + oy as f32,
-                                tz as f32 + 1.5,
-                            ),
+                            Transform::from_translation(theme.unit_position(&tile.position())),
                         ))
                         .insert(Moved(true));
                     let carrier_entity_id = find_unit_entity_id(carrier_id).unwrap();
@@ -459,20 +459,8 @@ fn event_processor_system(
                     *moved = Moved(true);
                     *capture_status = CaptureState::Capturing(capture_points);
 
-                    let tile = game.tiles.get(tile_id).unwrap();
-                    let (mut animations, mut graphs, _) = animation_params;
-                    let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
-                    let (ox, oy) = theme.hex_sprite_center_offset();
-                    let position = Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5);
-                    apply_animation_to_entity(
-                        commands,
-                        unit_entity_id,
-                        animation_from_translation_curve(
-                            &mut animations,
-                            &mut graphs,
-                            capture_animation_curve(position),
-                        ),
-                    );
+                    let unit_position = transforms.get(unit_entity_id).unwrap().translation;
+                    animation::animate_capturing(&mut commands, unit_entity_id, unit_position);
                     Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Captured(unit_id, tile_id, player_number) => {
@@ -485,33 +473,16 @@ fn event_processor_system(
                     *owner = Owner(player_number.unwrap_or(0));
                     *capture_status = CaptureState::Recovering(1);
 
-                    let tile = game.tiles.get(tile_id).unwrap();
-                    let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
-                    let (ox, oy) = theme.hex_sprite_center_offset();
-                    let position = Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5);
-
-                    let (mut animations, mut graphs, _) = animation_params;
-                    apply_animation_to_entity(
-                        commands,
-                        unit_entity_id,
-                        animation_from_translation_curve(
-                            &mut animations,
-                            &mut graphs,
-                            captured_animation_curve(position),
-                        ),
-                    );
+                    let unit_position = transforms.get(unit_entity_id).unwrap().translation;
+                    animation::animate_captured(&mut commands, unit_entity_id, unit_position);
                     Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Build(tile_id, unit_id, _unit_type, credits) => {
                     let tile = game.tiles.get(tile_id).unwrap();
-                    let theme_tile = theme.tile(&tile).unwrap();
-                    let (tx, ty, tz) = theme.map_hex_center(tile.x, tile.y);
-                    let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
-                    let (ox, oy) = theme.hex_sprite_center_offset();
                     let unit = game.units.get_ref(&unit_id).unwrap();
                     commands.spawn((
                         map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                        Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, tz as f32 + 1.5),
+                        Transform::from_translation(theme.unit_position(&tile.position())),
                     ));
                     for mut fund in funds.iter_mut() {
                         *fund = fund.deduct(credits);
@@ -714,84 +685,10 @@ fn interaction_event_system(
                     *highlight = TileHighlight::Normal;
                 }
             }
+            InteractionEvent::EndTurn => {
+                wars::game::action::end_turn(&mut game, &mut |e| event_processor.queue.push_back(e))
+                    .expect("Could not end turn")
+            }
         }
     }
-}
-use bevy::animation::{AnimationTarget, AnimationTargetId, animated_field};
-struct AnimationInfo {
-    target_name: Name,
-    target_id: AnimationTargetId,
-    graph: Handle<AnimationGraph>,
-    player: AnimationPlayer,
-}
-
-fn move_animation_curve(
-    path: impl IntoIterator<Item = wars::game::Position>,
-    theme: &Theme,
-) -> impl AnimationCompatibleCurve<Vec3> {
-    let (ox, oy) = theme.hex_sprite_center_offset();
-    let waypoints: Vec<Vec3> = path
-        .into_iter()
-        .map(|wars::game::Position(hx, hy)| {
-            let (x, y, z) = theme.map_hex_center(hx, hy);
-            Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5)
-        })
-        .collect();
-    SampleAutoCurve::new(
-        Interval::new(0.0, 0.1 * waypoints.len() as f32).unwrap(),
-        waypoints,
-    )
-    .unwrap()
-}
-
-fn capture_animation_curve(position: Vec3) -> impl AnimationCompatibleCurve<Vec3> {
-    EasingCurve::new(0.0, 16.0, EaseFunction::QuadraticOut)
-        .ping_pong()
-        .unwrap()
-        .map(move |y| position + Vec3::Y * y)
-        .reparametrize_linear(Interval::new(0.0, 0.5).unwrap())
-        .unwrap()
-}
-fn captured_animation_curve(position: Vec3) -> impl AnimationCompatibleCurve<Vec3> {
-    capture_animation_curve(position)
-        .repeat(3)
-        .unwrap()
-        .reparametrize_linear(Interval::UNIT)
-        .unwrap()
-}
-fn animation_from_translation_curve<C: AnimationCompatibleCurve<Vec3>>(
-    animations: &mut ResMut<Assets<AnimationClip>>,
-    graphs: &mut ResMut<Assets<AnimationGraph>>,
-    curve: C,
-) -> AnimationInfo {
-    let mut animation = AnimationClip::default();
-    let target_name = Name::new("target");
-    let target_id = AnimationTargetId::from_name(&target_name);
-    animation.add_curve_to_target(
-        target_id,
-        AnimatableCurve::new(animated_field!(Transform::translation), curve),
-    );
-    let (graph, animation_index) = AnimationGraph::from_clip(animations.add(animation));
-    let graph = graphs.add(graph);
-    let mut player = AnimationPlayer::default();
-    player.play(animation_index);
-
-    AnimationInfo {
-        target_name,
-        target_id,
-        graph,
-        player,
-    }
-}
-
-fn apply_animation_to_entity(mut commands: Commands, entity: Entity, info: AnimationInfo) {
-    commands.entity(entity).insert((
-        info.target_name,
-        AnimationGraphHandle(info.graph),
-        info.player,
-        AnimationTarget {
-            id: info.target_id,
-            player: entity,
-        },
-    ));
 }

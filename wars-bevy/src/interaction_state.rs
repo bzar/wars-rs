@@ -53,6 +53,7 @@ pub enum InteractionState {
 
 #[derive(Event, Debug)]
 pub enum InteractionEvent {
+    EndTurn,
     MoveAndWait(UnitId, Vec<Position>),
     MoveAndAttack(UnitId, Vec<Position>, UnitId),
     MoveAndCapture(UnitId, Vec<Position>),
@@ -187,6 +188,10 @@ impl InteractionState {
         };
     }
 
+    pub fn end_turn(&mut self, mut emit: impl FnMut(InteractionEvent)) {
+        emit(InteractionEvent::EndTurn);
+    }
+
     fn consume(&mut self) -> InteractionState {
         let mut state = InteractionState::Initial;
         std::mem::swap(self, &mut state);
@@ -242,6 +247,10 @@ fn select_destination(
 
     if game.unit_can_stay_at(unit_id, &position).is_ok() {
         action_options.insert(MapAction::Wait);
+
+        if unit.can_deploy() && !unit.deployed {
+            action_options.insert(MapAction::Deploy);
+        }
     }
 
     let attack_options = game.unit_attack_options(unit_id, &position);
