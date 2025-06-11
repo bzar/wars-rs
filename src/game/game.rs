@@ -464,23 +464,24 @@ impl Game {
         attacker_id: &UnitId,
         target_id: &UnitId,
         attack_from: &Position,
-    ) -> Option<bool> {
+    ) -> Option<Health> {
         let attacker = self.units.get_ref(attacker_id)?;
         let target = self.units.get_ref(target_id)?;
         let (_, target_tile) = self.tiles.get_unit_tile(*target_id)?;
         let distance = attack_from.distance_to(&Position(target_tile.x, target_tile.y));
-        let damage =
-            action::calculate_attack_damage(attacker, target, distance, target_tile.terrain);
-        Some(damage.is_some())
+        action::calculate_attack_damage(attacker, target, distance, target_tile.terrain)
     }
-    pub fn unit_attack_options(&self, unit_id: UnitId, attack_from: &Position) -> HashSet<UnitId> {
+    pub fn unit_attack_options(
+        &self,
+        unit_id: UnitId,
+        attack_from: &Position,
+    ) -> HashMap<UnitId, Health> {
         self.units
             .iter_ids()
-            .filter(|target_id| {
+            .filter_map(|target_id| {
                 self.unit_can_attack_target(&unit_id, target_id, attack_from)
-                    .unwrap_or(false)
+                    .map(move |damage| (*target_id, damage))
             })
-            .copied()
             .collect()
     }
     pub fn unit_can_capture_tile(&self, unit_id: UnitId, tile_id: TileId) -> ActionResult<()> {

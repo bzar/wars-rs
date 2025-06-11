@@ -1,6 +1,7 @@
 use crate::{
-    CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DeployEmblem, Deployed, Game,
-    Health, InputLayer, Moved, OnesDigit, Owner, Prop, SpriteSheet, TensDigit, Theme, Tile,
+    CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DamageHundredsDigit,
+    DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed, Game, Health,
+    HealthOnesDigit, HealthTensDigit, InputLayer, Moved, Owner, Prop, SpriteSheet, Theme, Tile,
     TileHighlight, Unit, UnitHighlight,
     interaction_state::{InteractionEvent, InteractionState},
 };
@@ -19,6 +20,7 @@ impl Plugin for MapPlugin {
                 tile_highlight_system,
                 capture_bar_bit_system,
                 health_number_system,
+                damage_number_system,
                 carrier_slot_system,
             ),
         );
@@ -182,8 +184,14 @@ fn tile_click_observer(
 fn health_number_system(
     theme: Res<Theme>,
     changed_healths: Query<(&Health, &Children), Changed<Health>>,
-    mut ones: Query<(&mut Visibility, &mut Sprite), (With<OnesDigit>, Without<TensDigit>)>,
-    mut tens: Query<(&mut Visibility, &mut Sprite), (With<TensDigit>, Without<OnesDigit>)>,
+    mut ones: Query<
+        (&mut Visibility, &mut Sprite),
+        (With<HealthOnesDigit>, Without<HealthTensDigit>),
+    >,
+    mut tens: Query<
+        (&mut Visibility, &mut Sprite),
+        (With<HealthTensDigit>, Without<HealthOnesDigit>),
+    >,
 ) {
     for (health, children) in changed_healths.iter() {
         for number in children.iter() {
@@ -205,10 +213,89 @@ fn health_number_system(
                     Health::Full => {
                         *visibility = Visibility::Hidden;
                     }
+                    Health::Damaged(x) if *x < 10 => {
+                        *visibility = Visibility::Hidden;
+                    }
                     Health::Damaged(x) => {
                         let digit = x % 100 / 10;
                         sprite.texture_atlas.as_mut().map(|a| {
                             a.index = theme.health_number(digit as usize).unwrap().number_index
+                        });
+                        *visibility = Visibility::Visible;
+                    }
+                }
+            }
+        }
+    }
+}
+fn damage_number_system(
+    theme: Res<Theme>,
+    changed_damages: Query<(&DamageIndicator, &Children), Changed<DamageIndicator>>,
+    mut ones: Query<
+        (&mut Visibility, &mut Sprite),
+        (
+            With<DamageOnesDigit>,
+            (Without<DamageTensDigit>, Without<DamageHundredsDigit>),
+        ),
+    >,
+    mut tens: Query<
+        (&mut Visibility, &mut Sprite),
+        (
+            With<DamageTensDigit>,
+            (Without<DamageOnesDigit>, Without<DamageHundredsDigit>),
+        ),
+    >,
+    mut hundreds: Query<
+        (&mut Visibility, &mut Sprite),
+        (
+            With<DamageHundredsDigit>,
+            (Without<DamageOnesDigit>, Without<DamageTensDigit>),
+        ),
+    >,
+) {
+    for (damage, children) in changed_damages.iter() {
+        for number in children.iter() {
+            if let Ok((mut visibility, mut sprite)) = ones.get_mut(number) {
+                match damage {
+                    DamageIndicator::Hidden => {
+                        *visibility = Visibility::Hidden;
+                    }
+                    DamageIndicator::Visible(x) => {
+                        let digit = x % 10;
+                        sprite.texture_atlas.as_mut().map(|a| {
+                            a.index = theme.damage_number(digit as usize).unwrap().number_index
+                        });
+                        *visibility = Visibility::Visible;
+                    }
+                }
+            } else if let Ok((mut visibility, mut sprite)) = tens.get_mut(number) {
+                match damage {
+                    DamageIndicator::Hidden => {
+                        *visibility = Visibility::Hidden;
+                    }
+                    DamageIndicator::Visible(x) if *x < 10 => {
+                        *visibility = Visibility::Hidden;
+                    }
+                    DamageIndicator::Visible(x) => {
+                        let digit = x % 100 / 10;
+                        sprite.texture_atlas.as_mut().map(|a| {
+                            a.index = theme.damage_number(digit as usize).unwrap().number_index
+                        });
+                        *visibility = Visibility::Visible;
+                    }
+                }
+            } else if let Ok((mut visibility, mut sprite)) = hundreds.get_mut(number) {
+                match damage {
+                    DamageIndicator::Hidden => {
+                        *visibility = Visibility::Hidden;
+                    }
+                    DamageIndicator::Visible(x) if *x < 100 => {
+                        *visibility = Visibility::Hidden;
+                    }
+                    DamageIndicator::Visible(x) => {
+                        let digit = x % 1000 / 100;
+                        sprite.texture_atlas.as_mut().map(|a| {
+                            a.index = theme.damage_number(digit as usize).unwrap().number_index
                         });
                         *visibility = Visibility::Visible;
                     }
@@ -308,6 +395,7 @@ pub fn unit_bundle(
     (
         Unit(unit_id),
         health,
+        DamageIndicator::Hidden,
         Deployed(unit.deployed),
         UnitHighlight::Normal,
         Moved(unit.moved),
@@ -323,7 +411,7 @@ pub fn unit_bundle(
                 Visibility::Hidden,
             ),
             (
-                TensDigit,
+                HealthTensDigit,
                 sprite_sheet.sprite(
                     theme
                         .health_number(unit.health as usize % 100 / 10)
@@ -334,13 +422,31 @@ pub fn unit_bundle(
                 Visibility::Hidden,
             ),
             (
-                OnesDigit,
+                HealthOnesDigit,
                 sprite_sheet.sprite(
                     theme
                         .health_number(unit.health as usize % 10)
                         .unwrap()
                         .number_index
                 ),
+                Transform::from_xyz(0.0, 0.0, 1.0),
+                Visibility::Hidden,
+            ),
+            (
+                DamageHundredsDigit,
+                sprite_sheet.sprite(theme.damage_number(0).unwrap().number_index),
+                Transform::from_xyz(-20.0, 0.0, 1.0),
+                Visibility::Hidden,
+            ),
+            (
+                DamageTensDigit,
+                sprite_sheet.sprite(theme.damage_number(0).unwrap().number_index),
+                Transform::from_xyz(-10.0, 0.0, 1.0),
+                Visibility::Hidden,
+            ),
+            (
+                DamageOnesDigit,
+                sprite_sheet.sprite(theme.damage_number(0).unwrap().number_index),
                 Transform::from_xyz(0.0, 0.0, 1.0),
                 Visibility::Hidden,
             ),

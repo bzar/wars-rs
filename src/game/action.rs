@@ -310,7 +310,8 @@ pub fn calculate_attack_damage(
         .filter_map(|w| (w.range_map)(distance).map(|efficiency| (w, efficiency)))
         .filter_map(|(w, efficiency)| (w.power_map)(target_armor).map(|power| (efficiency, power)))
         .map(|(efficiency, power)| {
-            attacker.health * power * efficiency * (100 - defense) / (100_00_00)
+            attacker.health * power * efficiency * (100 - defense * target.health / 100)
+                / (100_00_00)
         })
         .max()
         .map(|damage| damage.max(1))

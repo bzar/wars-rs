@@ -127,9 +127,21 @@ impl Health {
     }
 }
 #[derive(Component)]
-struct OnesDigit;
+struct HealthOnesDigit;
 #[derive(Component)]
-struct TensDigit;
+struct HealthTensDigit;
+
+#[derive(Component)]
+enum DamageIndicator {
+    Hidden,
+    Visible(u32),
+}
+#[derive(Component)]
+struct DamageOnesDigit;
+#[derive(Component)]
+struct DamageTensDigit;
+#[derive(Component)]
+struct DamageHundredsDigit;
 
 #[derive(Component)]
 struct Owner(u32);
@@ -514,6 +526,7 @@ fn interaction_event_system(
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
     mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
     mut unload_menus: Query<&mut UnloadMenu>,
+    mut damage_indicators: Query<(&Unit, &mut DamageIndicator)>,
 ) {
     for event in events.read() {
         info!("Interaction event: {event:?}");
@@ -534,6 +547,9 @@ fn interaction_event_system(
                 visible_action_buttons.clear();
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
+                }
+                for (_, mut damage_indicator) in damage_indicators.iter_mut() {
+                    *damage_indicator = DamageIndicator::Hidden;
                 }
                 wars::game::action::move_and_attack(
                     game.deref_mut(),
@@ -619,11 +635,16 @@ fn interaction_event_system(
             InteractionEvent::SelectAttackTarget(ref options) => {
                 *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
                 for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
-                    *highlight = if options.contains(&uid) {
+                    *highlight = if options.contains_key(&uid) {
                         UnitHighlight::Target
                     } else {
                         UnitHighlight::Normal
                     };
+                }
+                for (Unit(uid), mut damage_indicator) in damage_indicators.iter_mut() {
+                    if let Some(damage) = options.get(uid) {
+                        *damage_indicator = DamageIndicator::Visible(*damage);
+                    }
                 }
             }
             InteractionEvent::SelectUnloadUnit(ref options) => {
@@ -675,6 +696,9 @@ fn interaction_event_system(
             InteractionEvent::CancelSelectAttackTarget => {
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
+                }
+                for (_, mut damage_indicator) in damage_indicators.iter_mut() {
+                    *damage_indicator = DamageIndicator::Hidden;
                 }
             }
             InteractionEvent::CancelSelectUnloadUnit => {

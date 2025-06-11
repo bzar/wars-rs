@@ -29,12 +29,12 @@ pub enum InteractionState {
         unit_id: UnitId,
         path: Vec<Position>,
         action_options: HashSet<MapAction>,
-        attack_options: HashSet<UnitId>,
+        attack_options: HashMap<UnitId, wars::game::Health>,
     },
     SelectAttackTarget {
         unit_id: UnitId,
         path: Vec<Position>,
-        attack_options: HashSet<UnitId>,
+        attack_options: HashMap<UnitId, wars::game::Health>,
     },
     SelectUnitToBuild {
         tile_id: TileId,
@@ -66,7 +66,7 @@ pub enum InteractionEvent {
     CancelSelectDestination,
     SelectAction(HashSet<MapAction>),
     CancelSelectAction,
-    SelectAttackTarget(HashSet<UnitId>),
+    SelectAttackTarget(HashMap<UnitId, wars::game::Health>),
     CancelSelectAttackTarget,
     SelectUnloadUnit(Vec<UnitId>),
     CancelSelectUnloadUnit,
@@ -285,7 +285,7 @@ fn select_attack_target(
     unit_id: UnitId,
     path: Vec<Position>,
     tile_id: TileId,
-    attack_options: HashSet<UnitId>,
+    attack_options: HashMap<UnitId, wars::game::Health>,
     mut emit: impl FnMut(InteractionEvent),
 ) -> InteractionState {
     let tile = game.tiles.get(tile_id).expect("Tile does not exist");
@@ -293,7 +293,7 @@ fn select_attack_target(
         return InteractionState::Initial;
     };
 
-    if !attack_options.contains(&target_id) {
+    if !attack_options.contains_key(&target_id) {
         return InteractionState::Initial;
     };
     emit(InteractionEvent::MoveAndAttack(unit_id, path, target_id));
@@ -330,7 +330,7 @@ fn select_action(
     path: Vec<Position>,
     action: MapAction,
     action_options: HashSet<MapAction>,
-    attack_options: HashSet<UnitId>,
+    attack_options: HashMap<UnitId, wars::game::Health>,
     mut emit: impl FnMut(InteractionEvent),
 ) -> InteractionState {
     if !action_options.contains(&action) {
