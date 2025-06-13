@@ -1,8 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-    BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game, InputLayer,
-    MapAction, MenuBar, SpriteSheet, Theme, UnloadMenu, UnloadMenuItem, VisibleActionButtons,
+    Action, BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game,
+    InTurnPlayer, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
+    UnloadMenuItem, VisibleActionButtons,
     interaction_state::{InteractionEvent, InteractionState},
 };
 use bevy::prelude::*;
@@ -23,6 +24,7 @@ impl Plugin for UIPlugin {
                 unload_menu_system,
                 unload_menu_item_button_system,
                 input_layer_system,
+                player_colored_ui_system,
             ),
         );
     }
@@ -33,48 +35,63 @@ fn setup(
     game: Res<Game>,
     theme: Res<Theme>,
     sprite_sheet: Res<SpriteSheet>,
+    asset_server: Res<AssetServer>,
 ) {
     commands.spawn((
-        MenuBar,
         Node {
-            width: Val::Percent(100.0),
-            height: Val::Px(32.0),
+            position_type: PositionType::Absolute,
+            width: Val::Px(64.0),
+            height: Val::Px(64.0),
+            top: Val::Px(8.0),
+            right: Val::Px(8.0),
             ..Default::default()
         },
-        BackgroundColor(Color::BLACK),
+        EndTurnButton,
+        Button,
+        children![(
+            ImageNode::new(asset_server.load("gui/action-endturn.png")),
+            PlayerColored
+        )],
+    ));
+    commands.spawn((
+        Node {
+            display: Display::Grid,
+            grid_template_columns: (0..3).map(|_| GridTrack::px(64.0)).into_iter().collect(),
+            position_type: PositionType::Absolute,
+            ..Default::default()
+        },
         children![
-            (button_bundle("End turn"), EndTurnButton,),
-            (button_bundle("Wait"), MapAction::Wait, Visibility::Hidden),
             (
-                button_bundle("Attack"),
-                MapAction::Attack,
-                Visibility::Hidden
+                button_bundle("Wait", asset_server.load("gui/action-wait.png")),
+                Action::Wait,
             ),
             (
-                button_bundle("Capture"),
-                MapAction::Capture,
-                Visibility::Hidden
+                button_bundle("Attack", asset_server.load("gui/action-attack.png")),
+                Action::Attack,
             ),
             (
-                button_bundle("Deploy"),
-                MapAction::Deploy,
-                Visibility::Hidden
+                button_bundle("Capture", asset_server.load("gui/action-capture.png")),
+                Action::Capture,
             ),
             (
-                button_bundle("Undeploy"),
-                MapAction::Undeploy,
-                Visibility::Hidden
-            ),
-            (button_bundle("Load"), MapAction::Load, Visibility::Hidden),
-            (
-                button_bundle("Unload"),
-                MapAction::Unload,
-                Visibility::Hidden
+                button_bundle("Deploy", asset_server.load("gui/action-deploy.png")),
+                Action::Deploy,
             ),
             (
-                button_bundle("Cancel"),
-                MapAction::Cancel,
-                Visibility::Hidden
+                button_bundle("Undeploy", asset_server.load("gui/action-undeploy.png")),
+                Action::Undeploy,
+            ),
+            (
+                button_bundle("Load", asset_server.load("gui/action-load.png")),
+                Action::Load,
+            ),
+            (
+                button_bundle("Unload", asset_server.load("gui/action-unload.png")),
+                Action::Unload,
+            ),
+            (
+                button_bundle("Cancel", asset_server.load("gui/action-cancel.png")),
+                Action::Cancel,
             ),
         ],
     ));
@@ -166,27 +183,27 @@ fn setup(
     ));
 }
 
-fn button_bundle(text: &str) -> impl Bundle {
+fn button_bundle(text: &str, icon: Handle<Image>) -> impl Bundle {
     (
         Button,
         Node {
-            width: Val::Px(128.0),
-            height: Val::Percent(100.0),
+            width: Val::Px(64.0),
+            height: Val::Px(64.0),
             justify_content: JustifyContent::Center,
             align_items: AlignItems::Center,
-            border: UiRect::all(Val::Px(2.0)),
+            display: Display::None,
             ..default()
         },
-        BackgroundColor(Color::WHITE.with_alpha(0.5)),
-        BorderColor(Color::BLACK.with_alpha(0.9)),
         children![(
-            Text::new(text),
+            /*Text::new(text),
             TextFont {
                 //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
                 font_size: 24.0,
                 ..default()
             },
-            TextColor(Color::BLACK),
+            TextColor(Color::BLACK),*/
+            ImageNode::new(icon),
+            PlayerColored
         )],
     )
 }
@@ -263,13 +280,13 @@ fn end_turn_button_system(
 }
 fn visible_action_buttons_system(
     visible_buttons: Res<VisibleActionButtons>,
-    mut action_button_visibility: Query<(&MapAction, &mut Visibility), With<Button>>,
+    mut action_button_visibility: Query<(&Action, &mut Node), With<Button>>,
 ) {
-    for (action, mut visibility) in action_button_visibility.iter_mut() {
-        *visibility = if visible_buttons.contains(action) {
-            Visibility::Visible
+    for (action, mut node) in action_button_visibility.iter_mut() {
+        node.display = if visible_buttons.contains(action) {
+            Display::Flex
         } else {
-            Visibility::Hidden
+            Display::None
         };
     }
 }
@@ -314,7 +331,7 @@ fn build_button_system(
     }
 }
 fn map_action_button_system(
-    action_buttons: Query<(&Interaction, &MapAction), (Changed<Interaction>, With<Button>)>,
+    action_buttons: Query<(&Interaction, &Action), (Changed<Interaction>, With<Button>)>,
     game: Res<Game>,
     mut interaction_state: ResMut<InteractionState>,
     mut events: EventWriter<InteractionEvent>,
@@ -370,5 +387,22 @@ fn disable_build_items_outside_price_range(
         } else {
             Display::None
         };
+    }
+}
+
+fn player_colored_ui_system(
+    in_turn: Res<InTurnPlayer>,
+    theme: Res<Theme>,
+    mut image_nodes: Query<&mut ImageNode, With<PlayerColored>>,
+) {
+    let Some(player_color) = theme
+        .spec
+        .player_colors
+        .get(in_turn.0.unwrap_or(0) as usize)
+    else {
+        return;
+    };
+    for mut image_node in image_nodes.iter_mut() {
+        image_node.color = player_color.into();
     }
 }

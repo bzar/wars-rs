@@ -177,7 +177,7 @@ impl Funds {
     }
 }
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
-enum MapAction {
+enum Action {
     Wait,
     Attack,
     Capture,
@@ -189,7 +189,7 @@ enum MapAction {
 }
 
 #[derive(Resource, Default, Deref, DerefMut)]
-struct VisibleActionButtons(HashSet<MapAction>);
+struct VisibleActionButtons(HashSet<Action>);
 
 #[derive(Component)]
 struct BuildMenu {
@@ -209,6 +209,12 @@ enum InputLayer {
     Game,
 }
 
+#[derive(Component)]
+struct PlayerColored;
+
+#[derive(Resource)]
+struct InTurnPlayer(Option<wars::game::PlayerNumber>);
+
 fn main() {
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/my-awesome-map.json");
     const THEME_JSON: &str = include_str!("../assets/settings.json");
@@ -227,6 +233,7 @@ fn main() {
         .insert_resource(event_processor)
         .insert_resource(VisibleActionButtons::default())
         .insert_resource(InputLayer::Game)
+        .insert_resource(InTurnPlayer(None))
         .add_plugins((
             camera::CameraPlugin,
             map::MapPlugin,
@@ -266,6 +273,7 @@ fn event_processor_system(
     mut ep: ResMut<EventProcessor>,
     game: Res<Game>,
     theme: Res<Theme>,
+    mut in_turn_player: ResMut<InTurnPlayer>,
     sprite_animations: Query<&animation::SpriteAnimation>,
     unit_queries: (
         Query<(Entity, &Unit)>,
@@ -324,15 +332,11 @@ fn event_processor_system(
             use wars::game::Event;
             ep.state = match event {
                 Event::StartTurn(player_number) => {
+                    *in_turn_player = InTurnPlayer(Some(player_number));
                     if let Some(player_color) = theme.spec.player_colors.get(player_number as usize)
                     {
                         for mut top_bar_color in top_bar_colors.iter_mut() {
-                            top_bar_color.0 = Color::srgba_u8(
-                                player_color.r,
-                                player_color.g,
-                                player_color.b,
-                                u8::MAX,
-                            );
+                            top_bar_color.0 = player_color.into();
                         }
                     }
 
@@ -611,7 +615,7 @@ fn interaction_event_system(
                 .expect("Could not unload carried unit");
             }
             InteractionEvent::SelectDestination(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
+                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
                     *highlight = if options.contains(&tile.position()) {
@@ -633,7 +637,7 @@ fn interaction_event_system(
                 *visible_action_buttons = VisibleActionButtons(options.clone());
             }
             InteractionEvent::SelectAttackTarget(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
+                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
                     *highlight = if options.contains_key(&uid) {
                         UnitHighlight::Target
@@ -648,12 +652,12 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::SelectUnloadUnit(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
+                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 let mut menu = unload_menus.single_mut().unwrap();
                 *menu = UnloadMenu(options.clone());
             }
             InteractionEvent::SelectUnloadDestination(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
+                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 unload_menus.single_mut().unwrap().clear();
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
@@ -665,7 +669,7 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::SelectUnitToBuild(ref unit_classes) => {
-                *visible_action_buttons = VisibleActionButtons([MapAction::Cancel].into());
+                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 let (mut build_menu, mut visibility) =
                     build_menus.single_mut().expect("Build menu does not exist");
                 *visibility = Visibility::Inherited;
@@ -681,11 +685,13 @@ fn interaction_event_system(
                     &mut event_handler,
                 )
                 .expect("Could not build unit");
+                visible_action_buttons.clear();
                 build_menus
                     .iter_mut()
                     .for_each(|(_, mut v)| *v = Visibility::Hidden);
             }
             InteractionEvent::CancelSelectUnitToBuild => {
+                visible_action_buttons.clear();
                 build_menus
                     .iter_mut()
                     .for_each(|(_, mut v)| *v = Visibility::Hidden);
@@ -694,6 +700,7 @@ fn interaction_event_system(
                 visible_action_buttons.clear();
             }
             InteractionEvent::CancelSelectAttackTarget => {
+                visible_action_buttons.clear();
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
                 }
@@ -702,9 +709,11 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::CancelSelectUnloadUnit => {
+                visible_action_buttons.clear();
                 unload_menus.single_mut().unwrap().clear();
             }
             InteractionEvent::CancelSelectUnloadDestination => {
+                visible_action_buttons.clear();
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }

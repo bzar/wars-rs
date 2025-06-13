@@ -258,3 +258,9 @@ impl Theme {
         Vec3::new((x + ox) as f32, (y + oy) as f32, z as f32 + 1.5)
     }
 }
+
+impl Into<bevy::prelude::Color> for &Color {
+    fn into(self) -> bevy::prelude::Color {
+        bevy::prelude::Color::srgba_u8(self.r, self.g, self.b, u8::MAX)
+    }
+}

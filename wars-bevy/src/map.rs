@@ -418,7 +418,7 @@ pub fn unit_bundle(
                         .unwrap()
                         .number_index
                 ),
-                Transform::from_xyz(-10.0, 0.0, 1.0),
+                Transform::from_xyz(-(theme.spec.number.width as f32), 0.0, 1.0),
                 Visibility::Hidden,
             ),
             (
@@ -435,13 +435,13 @@ pub fn unit_bundle(
             (
                 DamageHundredsDigit,
                 sprite_sheet.sprite(theme.damage_number(0).unwrap().number_index),
-                Transform::from_xyz(-20.0, 0.0, 1.0),
+                Transform::from_xyz(-2.0 * (theme.spec.number.width as f32), 0.0, 1.0),
                 Visibility::Hidden,
             ),
             (
                 DamageTensDigit,
                 sprite_sheet.sprite(theme.damage_number(0).unwrap().number_index),
-                Transform::from_xyz(-10.0, 0.0, 1.0),
+                Transform::from_xyz(-(theme.spec.number.width as f32), 0.0, 1.0),
                 Visibility::Hidden,
             ),
             (

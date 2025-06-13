@@ -6,7 +6,7 @@ use wars::{
     model::UnitClass,
 };
 
-use crate::MapAction;
+use crate::Action;
 
 pub struct InteractionStatePlugin;
 
@@ -28,7 +28,7 @@ pub enum InteractionState {
     SelectAction {
         unit_id: UnitId,
         path: Vec<Position>,
-        action_options: HashSet<MapAction>,
+        action_options: HashSet<Action>,
         attack_options: HashMap<UnitId, wars::game::Health>,
     },
     SelectAttackTarget {
@@ -64,7 +64,7 @@ pub enum InteractionEvent {
     BuildUnit(TileId, UnitType),
     SelectDestination(HashSet<Position>),
     CancelSelectDestination,
-    SelectAction(HashSet<MapAction>),
+    SelectAction(HashSet<Action>),
     CancelSelectAction,
     SelectAttackTarget(HashMap<UnitId, wars::game::Health>),
     CancelSelectAttackTarget,
@@ -118,7 +118,7 @@ impl InteractionState {
     pub fn select_action(
         &mut self,
         game: &Game,
-        action: MapAction,
+        action: Action,
         mut emit: impl FnMut(InteractionEvent),
     ) {
         *self = match self.consume() {
@@ -136,23 +136,23 @@ impl InteractionState {
                 attack_options,
                 emit,
             ),
-            InteractionState::SelectDestination { .. } if action == MapAction::Cancel => {
+            InteractionState::SelectDestination { .. } if action == Action::Cancel => {
                 emit(InteractionEvent::CancelSelectDestination);
                 InteractionState::Initial
             }
-            InteractionState::SelectAttackTarget { .. } if action == MapAction::Cancel => {
+            InteractionState::SelectAttackTarget { .. } if action == Action::Cancel => {
                 emit(InteractionEvent::CancelSelectAttackTarget);
                 InteractionState::Initial
             }
-            InteractionState::SelectUnitToBuild { .. } if action == MapAction::Cancel => {
+            InteractionState::SelectUnitToBuild { .. } if action == Action::Cancel => {
                 emit(InteractionEvent::CancelSelectUnitToBuild);
                 InteractionState::Initial
             }
-            InteractionState::SelectUnitToUnload { .. } if action == MapAction::Cancel => {
+            InteractionState::SelectUnitToUnload { .. } if action == Action::Cancel => {
                 emit(InteractionEvent::CancelSelectUnloadUnit);
                 InteractionState::Initial
             }
-            InteractionState::SelectUnloadDestination { .. } if action == MapAction::Cancel => {
+            InteractionState::SelectUnloadDestination { .. } if action == Action::Cancel => {
                 emit(InteractionEvent::CancelSelectUnloadDestination);
                 InteractionState::Initial
             }
@@ -243,34 +243,34 @@ fn select_destination(
         return InteractionState::Initial;
     };
 
-    let mut action_options = HashSet::from([MapAction::Cancel]);
+    let mut action_options = HashSet::from([Action::Cancel]);
 
     if game.unit_can_stay_at(unit_id, &position).is_ok() {
-        action_options.insert(MapAction::Wait);
+        action_options.insert(Action::Wait);
 
         if unit.can_deploy() && !unit.deployed {
-            action_options.insert(MapAction::Deploy);
+            action_options.insert(Action::Deploy);
         }
     }
 
     let attack_options = game.unit_attack_options(unit_id, &position);
 
     if !attack_options.is_empty() {
-        action_options.insert(MapAction::Attack);
+        action_options.insert(Action::Attack);
     }
 
     if game.unit_can_load_into_carrier_at(unit_id, &position) {
-        action_options.insert(MapAction::Load);
+        action_options.insert(Action::Load);
     }
 
     if game.unit_can_capture_tile(unit_id, tile_id).is_ok() {
-        action_options.insert(MapAction::Capture);
+        action_options.insert(Action::Capture);
     }
     if unit.carried.iter().any(|u| {
         game.unit_unload_options(unit_id, &position, *u)
             .is_some_and(|os| !os.is_empty())
     }) {
-        action_options.insert(MapAction::Unload);
+        action_options.insert(Action::Unload);
     }
     emit(InteractionEvent::SelectAction(action_options.clone()));
     InteractionState::SelectAction {
@@ -328,8 +328,8 @@ fn select_action(
     game: &Game,
     unit_id: UnitId,
     path: Vec<Position>,
-    action: MapAction,
-    action_options: HashSet<MapAction>,
+    action: Action,
+    action_options: HashSet<Action>,
     attack_options: HashMap<UnitId, wars::game::Health>,
     mut emit: impl FnMut(InteractionEvent),
 ) -> InteractionState {
@@ -337,11 +337,11 @@ fn select_action(
         panic!("Action is not permitted here");
     }
     match action {
-        MapAction::Wait => {
+        Action::Wait => {
             emit(InteractionEvent::MoveAndWait(unit_id, path));
             InteractionState::Initial
         }
-        MapAction::Attack => {
+        Action::Attack => {
             emit(InteractionEvent::SelectAttackTarget(attack_options.clone()));
             InteractionState::SelectAttackTarget {
                 unit_id,
@@ -349,23 +349,23 @@ fn select_action(
                 attack_options,
             }
         }
-        MapAction::Capture => {
+        Action::Capture => {
             emit(InteractionEvent::MoveAndCapture(unit_id, path));
             InteractionState::Initial
         }
-        MapAction::Deploy => {
+        Action::Deploy => {
             emit(InteractionEvent::MoveAndDeploy(unit_id, path));
             InteractionState::Initial
         }
-        MapAction::Undeploy => {
+        Action::Undeploy => {
             emit(InteractionEvent::Undeploy(unit_id));
             InteractionState::Initial
         }
-        MapAction::Load => {
+        Action::Load => {
             emit(InteractionEvent::MoveAndLoadInto(unit_id, path));
             InteractionState::Initial
         }
-        MapAction::Unload => {
+        Action::Unload => {
             let unit = game.units.get_ref(&unit_id).expect("Unit does not exist");
             emit(InteractionEvent::SelectUnloadUnit(unit.carried.clone()));
 
@@ -374,7 +374,7 @@ fn select_action(
                 path,
             }
         }
-        MapAction::Cancel => {
+        Action::Cancel => {
             emit(InteractionEvent::CancelSelectAction);
             InteractionState::Initial
         }
