@@ -65,6 +65,7 @@ pub enum InteractionEvent {
     SelectDestination(HashSet<Position>),
     CancelSelectDestination,
     SelectAction(HashSet<Action>),
+    SelectedAction(Action),
     CancelSelectAction,
     SelectAttackTarget(HashMap<UnitId, wars::game::Health>),
     CancelSelectAttackTarget,
@@ -336,6 +337,7 @@ fn select_action(
     if !action_options.contains(&action) {
         panic!("Action is not permitted here");
     }
+    emit(InteractionEvent::SelectedAction(action));
     match action {
         Action::Wait => {
             emit(InteractionEvent::MoveAndWait(unit_id, path));

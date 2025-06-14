@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
 use crate::{
-    Action, BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds, Game,
-    InTurnPlayer, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
+    Action, ActionMenu, BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds,
+    Game, InTurnPlayer, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
     UnloadMenuItem, VisibleActionButtons,
     interaction_state::{InteractionEvent, InteractionState},
 };
@@ -55,6 +55,23 @@ fn setup(
     ));
     commands.spawn((
         Node {
+            position_type: PositionType::Absolute,
+            width: Val::Px(64.0),
+            height: Val::Px(64.0),
+            top: Val::Px(8.0),
+            left: Val::Px(8.0),
+            ..Default::default()
+        },
+        Button,
+        Action::Cancel,
+        children![(
+            ImageNode::new(asset_server.load("gui/action-cancel.png")),
+            PlayerColored
+        )],
+    ));
+    commands.spawn((
+        ActionMenu,
+        Node {
             display: Display::Grid,
             grid_template_columns: (0..3).map(|_| GridTrack::px(64.0)).into_iter().collect(),
             position_type: PositionType::Absolute,
@@ -88,10 +105,6 @@ fn setup(
             (
                 button_bundle("Unload", asset_server.load("gui/action-unload.png")),
                 Action::Unload,
-            ),
-            (
-                button_bundle("Cancel", asset_server.load("gui/action-cancel.png")),
-                Action::Cancel,
             ),
         ],
     ));

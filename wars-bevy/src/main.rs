@@ -192,6 +192,9 @@ enum Action {
 struct VisibleActionButtons(HashSet<Action>);
 
 #[derive(Component)]
+struct ActionMenu;
+
+#[derive(Component)]
 struct BuildMenu {
     price_limit: u32,
     unit_classes: HashSet<wars::model::UnitClass>,
@@ -528,9 +531,11 @@ fn interaction_event_system(
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
-    mut build_menus: Query<(&mut BuildMenu, &mut Visibility)>,
+    mut build_menus: Query<(&mut BuildMenu, &mut Visibility), Without<ActionMenu>>,
     mut unload_menus: Query<&mut UnloadMenu>,
     mut damage_indicators: Query<(&Unit, &mut DamageIndicator)>,
+    mut action_menus: Query<(&mut Node, &mut Visibility), (With<ActionMenu>, Without<BuildMenu>)>,
+    window: Single<&Window>,
 ) {
     for event in events.read() {
         info!("Interaction event: {event:?}");
@@ -631,10 +636,22 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::SelectAction(ref options) => {
+                action_menus.iter_mut().for_each(|(mut node, mut v)| {
+                    *v = Visibility::Inherited;
+                    if let Some(position) = window.cursor_position() {
+                        node.left = Val::Px(position.x);
+                        node.top = Val::Px(position.y);
+                    }
+                });
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }
                 *visible_action_buttons = VisibleActionButtons(options.clone());
+            }
+            InteractionEvent::SelectedAction(_) => {
+                action_menus
+                    .iter_mut()
+                    .for_each(|(_, mut v)| *v = Visibility::Hidden);
             }
             InteractionEvent::SelectAttackTarget(ref options) => {
                 *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
