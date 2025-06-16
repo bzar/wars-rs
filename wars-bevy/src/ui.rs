@@ -1,10 +1,9 @@
 use std::collections::HashSet;
 
 use crate::{
-    Action, ActionMenu, BuildItem, BuildMenu, DisabledButton, EndTurnButton, EventProcessor, Funds,
-    Game, InTurnPlayer, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
+    Action, ActionMenu, BuildItem, BuildMenu, DisabledButton, EndTurnButton, Funds, Game,
+    InTurnPlayer, InputEvent, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
     UnloadMenuItem, VisibleActionButtons,
-    interaction_state::{InteractionEvent, InteractionState},
 };
 use bevy::prelude::*;
 
@@ -280,14 +279,11 @@ fn end_turn_button_system(
         &Interaction,
         (Changed<Interaction>, With<Button>, With<EndTurnButton>),
     >,
-    mut interaction_state: ResMut<InteractionState>,
-    mut events: EventWriter<InteractionEvent>,
+    mut events: EventWriter<InputEvent>,
 ) {
     for interaction in end_turn_buttons.iter() {
         if *interaction == Interaction::Pressed {
-            interaction_state.end_turn(|event| {
-                events.write(event);
-            });
+            events.write(InputEvent::EndTurn);
         }
     }
 }
@@ -305,55 +301,43 @@ fn visible_action_buttons_system(
 }
 
 fn unload_menu_item_button_system(
-    game: Res<Game>,
     unload_menu_items: Query<
         (&Interaction, &UnloadMenuItem),
         (Changed<Interaction>, With<Button>, Without<DisabledButton>),
     >,
-    mut interaction_state: ResMut<InteractionState>,
-    mut events: EventWriter<InteractionEvent>,
+    mut events: EventWriter<InputEvent>,
 ) {
     for (&interaction, UnloadMenuItem(unit_id)) in unload_menu_items.iter() {
         if interaction != Interaction::Pressed {
             continue;
         }
 
-        interaction_state.select_unit_to_unload(&game, *unit_id, |event| {
-            events.write(event);
-        });
+        events.write(InputEvent::UnloadUnit(*unit_id));
     }
 }
 
 fn build_button_system(
-    game: Res<Game>,
-    mut interaction_state: ResMut<InteractionState>,
     build_buttons: Query<
         (&Interaction, &BuildItem),
         (Changed<Interaction>, With<Button>, Without<DisabledButton>),
     >,
-    mut events: EventWriter<InteractionEvent>,
+    mut events: EventWriter<InputEvent>,
 ) {
     let presses = build_buttons
         .iter()
         .filter_map(|(i, bi)| (*i == Interaction::Pressed).then_some(bi));
 
     for BuildItem(unit_type) in presses {
-        interaction_state.select_unit_type_to_build(&game, *unit_type, |event| {
-            events.write(event);
-        });
+        events.write(InputEvent::BuildUnit(*unit_type));
     }
 }
 fn map_action_button_system(
     action_buttons: Query<(&Interaction, &Action), (Changed<Interaction>, With<Button>)>,
-    game: Res<Game>,
-    mut interaction_state: ResMut<InteractionState>,
-    mut events: EventWriter<InteractionEvent>,
+    mut events: EventWriter<InputEvent>,
 ) {
     for (interaction, action) in action_buttons.iter() {
         if *interaction == Interaction::Pressed {
-            interaction_state.select_action(&game, *action, |event| {
-                events.write(event);
-            });
+            events.write(InputEvent::Action(*action));
         }
     }
 }

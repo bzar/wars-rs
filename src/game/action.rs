@@ -341,12 +341,14 @@ pub fn move_and_attack(
     emit(Event::Attack(unit_id, target_id, damage));
 
     unit.moved = true;
+
     src_tile.unit = None;
     dst_tile.unit = Some(unit_id);
 
     if damage >= target.health {
         emit(Event::Destroyed(unit_id, target_id));
         target_tile.unit = None;
+        game.units.update(unit_id, unit)?;
         game.units.remove(target_id)?;
     } else {
         target.health -= damage;
@@ -363,6 +365,8 @@ pub fn move_and_attack(
                 unit.health -= counter_damage;
                 game.units.update(unit_id, unit)?;
             }
+        } else {
+            game.units.update(unit_id, unit)?;
         }
 
         game.units.update(target_id, target)?;

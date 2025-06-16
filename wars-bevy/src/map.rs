@@ -1,9 +1,8 @@
 use crate::{
     CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DamageHundredsDigit,
     DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed, Game, Health,
-    HealthOnesDigit, HealthTensDigit, InputLayer, Moved, Owner, Prop, SpriteSheet, Theme, Tile,
-    TileHighlight, Unit, UnitHighlight,
-    interaction_state::{InteractionEvent, InteractionState},
+    HealthOnesDigit, HealthTensDigit, InputEvent, InputLayer, Moved, Owner, Prop, SpriteSheet,
+    Theme, Tile, TileHighlight, Unit, UnitHighlight,
 };
 use bevy::prelude::*;
 
@@ -164,10 +163,8 @@ fn tile_highlight_system(
 fn tile_click_observer(
     trigger: Trigger<Pointer<Click>>,
     tile_query: Query<&Tile>,
-    game: Res<Game>,
     input_layer: Res<InputLayer>,
-    mut interaction_state: ResMut<InteractionState>,
-    mut events: EventWriter<InteractionEvent>,
+    mut events: EventWriter<InputEvent>,
 ) {
     if *input_layer == InputLayer::UI {
         return;
@@ -176,9 +173,7 @@ fn tile_click_observer(
         return;
     };
 
-    interaction_state.select_tile(&game, *tile_id, |event| {
-        events.write(event);
-    });
+    events.write(InputEvent::MapSelect(*tile_id));
 }
 
 fn health_number_system(

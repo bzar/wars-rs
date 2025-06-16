@@ -86,33 +86,57 @@ pub struct Map {
     pub funds: u32,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum ActionError {
+    #[error("Internal error")]
     InternalError,
+    #[error("Tile not found")]
+    TileNotFound,
+    #[error("Unit not found")]
     UnitNotFound,
+    #[error("Owner is not in turn")]
     OwnerNotInTurn,
+    #[error("Unit has already moved")]
     UnitAlreadyMoved,
+    #[error("Game is not in progress")]
     GameNotInProgress,
+    #[error("Invalid path")]
     InvalidPath,
+    #[error("Unit is not on map")]
     UnitNotOnMap,
+    #[error("Game has already started")]
     GameAlreadyStarted,
+    #[error("Cannot capture")]
     CannotCapture,
+    #[error("Cannot deploy")]
     CannotDeploy,
+    #[error("Cannot undeploy")]
     CannotUndeploy,
+    #[error("Cannot load")]
     CannotLoad,
+    #[error("Cannot unload")]
     CannotUnload,
+    #[error("Cannot build")]
     CannotBuild,
+    #[error("Insufficient funds")]
     InsufficientFunds,
+    #[error("Cannot attack")]
     CannotAttack,
+    #[error("Unit is deployed")]
     UnitIsDeployed,
+    #[error("Unit is not deployed")]
     UnitIsNotDeployed,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(thiserror::Error, Debug, PartialEq)]
 pub enum GameUpdateError {
+    #[error("Invalid state transition")]
     InvalidStateTransition,
+    #[error("Invalid player number")]
     InvalidPlayerNumber,
+    #[error("Invalid unit ID")]
     InvalidUnitId,
+    #[error("Invalid tile ID")]
     InvalidTileId,
 }
 pub type GameUpdateResult<T> = Result<T, GameUpdateError>;

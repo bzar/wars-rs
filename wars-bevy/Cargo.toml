@@ -11,6 +11,7 @@ serde_derive = "1.0.219"
 derive_more = { version = "2.0.1", features = ["deref"] }
 enum-iterator = "2.1.0"
 itertools = "0.14.0"
+thiserror = "2.0.12"
 
 [dependencies.bevy]
 version = "0.16.0"
@@ -35,6 +36,31 @@ features = [
   "std",
   "wayland",
   "png",
+]
+
+[target.'cfg(target_arch = "wasm32")'.dependencies.bevy]
+version = "0.16.0"
+default-features = false
+features = [
+  "bevy_asset",
+  "bevy_core_pipeline",
+  "bevy_render",
+  "bevy_sprite",
+  "bevy_state",
+  "bevy_text",
+  "bevy_image",
+  "bevy_picking",
+  "bevy_sprite_picking_backend",
+  "bevy_window",
+  "bevy_ui",
+  "bevy_log",
+  "bevy_animation",
+  "default_font",
+  "multi_threaded",
+  "std",
+  "png",
+  "web",
+  "webgl2",
 ]
 
 [profile.release]

@@ -6,6 +6,8 @@ use std::{
 };
 use wars::model::UNIT_MAX_HEALTH;
 
+use crate::interaction_state::InteractionState;
+
 mod animation;
 mod camera;
 mod interaction_state;
@@ -188,6 +190,14 @@ enum Action {
     Cancel,
 }
 
+#[derive(Event, Debug, Clone, Copy)]
+enum InputEvent {
+    MapSelect(wars::game::TileId),
+    Action(Action),
+    UnloadUnit(wars::game::UnitId),
+    BuildUnit(wars::game::UnitType),
+    EndTurn,
+}
 #[derive(Resource, Default, Deref, DerefMut)]
 struct VisibleActionButtons(HashSet<Action>);
 
@@ -237,6 +247,7 @@ fn main() {
         .insert_resource(VisibleActionButtons::default())
         .insert_resource(InputLayer::Game)
         .insert_resource(InTurnPlayer(None))
+        .add_event::<InputEvent>()
         .add_plugins((
             camera::CameraPlugin,
             map::MapPlugin,
@@ -525,7 +536,8 @@ fn event_processor_system(
 }
 
 fn interaction_event_system(
-    mut events: EventReader<InteractionEvent>,
+    mut events: EventReader<InputEvent>,
+    mut interaction_state: ResMut<InteractionState>,
     mut event_processor: ResMut<EventProcessor>,
     mut game: ResMut<Game>,
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
@@ -537,18 +549,18 @@ fn interaction_event_system(
     mut action_menus: Query<(&mut Node, &mut Visibility), (With<ActionMenu>, Without<BuildMenu>)>,
     window: Single<&Window>,
 ) {
-    for event in events.read() {
+    let mut enqueue_event = move |e| event_processor.queue.push_back(e);
+    let mut interaction_event_handler = |event, mut game: &mut wars::game::Game| {
         info!("Interaction event: {event:?}");
-
-        let mut event_handler = |e| event_processor.queue.push_back(e);
-        match *event {
+        match event {
+            InteractionEvent::SelectUnitOrBase(_units, _tiles) => {}
             InteractionEvent::MoveAndWait(unit_id, ref path) => {
                 visible_action_buttons.clear();
                 wars::game::action::move_and_wait(
                     game.deref_mut(),
                     unit_id,
                     &path,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not move unit");
             }
@@ -565,7 +577,7 @@ fn interaction_event_system(
                     unit_id,
                     &path,
                     target_id,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not attack");
             }
@@ -575,7 +587,7 @@ fn interaction_event_system(
                     game.deref_mut(),
                     unit_id,
                     &path,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not capture tile");
             }
@@ -585,13 +597,13 @@ fn interaction_event_system(
                     game.deref_mut(),
                     unit_id,
                     &path,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not deploy unit");
             }
             InteractionEvent::Undeploy(unit_id) => {
                 visible_action_buttons.clear();
-                wars::game::action::undeploy(game.deref_mut(), unit_id, &mut event_handler)
+                wars::game::action::undeploy(game.deref_mut(), unit_id, &mut enqueue_event)
                     .expect("Could not undeploy unit");
             }
             InteractionEvent::MoveAndLoadInto(unit_id, ref path) => {
@@ -600,7 +612,7 @@ fn interaction_event_system(
                     game.deref_mut(),
                     unit_id,
                     &path,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not load into unit");
             }
@@ -615,7 +627,7 @@ fn interaction_event_system(
                     &path,
                     unit_id,
                     position,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not unload carried unit");
             }
@@ -699,7 +711,7 @@ fn interaction_event_system(
                     game.deref_mut(),
                     tile.position(),
                     unit_type,
-                    &mut event_handler,
+                    &mut enqueue_event,
                 )
                 .expect("Could not build unit");
                 visible_action_buttons.clear();
@@ -736,9 +748,16 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::EndTurn => {
-                wars::game::action::end_turn(&mut game, &mut |e| event_processor.queue.push_back(e))
+                wars::game::action::end_turn(&mut game, &mut enqueue_event)
                     .expect("Could not end turn")
             }
         }
+    };
+
+    for event in events.read() {
+        info!("Input event: {event:?}");
+        interaction_state
+            .handle(*event, &mut game, &mut interaction_event_handler)
+            .expect("Interaction error");
     }
 }
