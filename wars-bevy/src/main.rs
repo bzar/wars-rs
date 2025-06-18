@@ -395,7 +395,7 @@ fn visualizer_system(
             .iter()
             .find_map(|(entity_id, Tile(tid))| (*tid == tile_id).then_some(entity_id))
     };
-    if visualizer.state.is_none() {
+    while visualizer.state.is_none() && !visualizer.queue.is_empty() {
         if let Some(event) = visualizer.queue.pop_front() {
             info!("Game event: {event:?}");
             use wars::game::Event;
@@ -588,7 +588,7 @@ fn visualizer_system(
                     None
                 }
                 e => Some(EventProcess::NoOp(e)),
-            };
+            }
         }
     }
 }
