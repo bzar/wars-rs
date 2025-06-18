@@ -1,22 +1,39 @@
 use bevy::prelude::*;
 use interaction_state::InteractionEvent;
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     ops::DerefMut,
 };
-use wars::model::UNIT_MAX_HEALTH;
+use wars::{game::PlayerNumber, model::UNIT_MAX_HEALTH};
 
 use crate::interaction_state::InteractionState;
 
 mod animation;
+mod bot;
 mod camera;
 mod interaction_state;
 mod map;
 mod theme;
 mod ui;
 
-#[derive(Resource, Deref, DerefMut)]
-struct Game(wars::game::Game);
+#[derive(PartialEq)]
+enum Player {
+    Human,
+    Bot,
+}
+#[derive(Resource)]
+struct Game {
+    state: wars::game::Game,
+    players: HashMap<PlayerNumber, Player>,
+}
+
+impl Game {
+    fn in_turn(&self) -> Option<&Player> {
+        self.state
+            .in_turn_number()
+            .and_then(|n| self.players.get(&n))
+    }
+}
 
 #[derive(Resource, Deref)]
 struct Theme(theme::Theme);
@@ -198,6 +215,15 @@ enum InputEvent {
     BuildUnit(wars::game::UnitType),
     EndTurn,
 }
+
+#[derive(Event)]
+struct GameEvent(wars::game::Event);
+
+#[derive(Event, PartialEq)]
+enum BotEvent {
+    RunBot,
+}
+
 #[derive(Resource, Default, Deref, DerefMut)]
 struct VisibleActionButtons(HashSet<Action>);
 
@@ -233,14 +259,13 @@ fn main() {
     const THEME_JSON: &str = include_str!("../assets/settings.json");
     let theme: theme::Theme = theme::Theme::from_json(THEME_JSON).unwrap();
     let map = wars::game::Map::from_json(THIRD_PARTY_MAP).unwrap();
-    let mut game = wars::game::Game::new(map, &[0, 1]);
+    let state = wars::game::Game::new(map, &[0, 1]);
+    let players = [(1, Player::Human), (2, Player::Bot)].into_iter().collect();
 
-    let mut event_processor = EventProcessor::default();
-    wars::game::action::start(&mut game, &mut |e| event_processor.queue.push_back(e))
-        .expect("Could not start game");
+    let event_processor = EventProcessor::default();
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
-        .insert_resource(Game(game))
+        .insert_resource(Game { state, players })
         .insert_resource(Theme(theme))
         .insert_resource(SpriteSheet::default())
         .insert_resource(event_processor)
@@ -248,6 +273,8 @@ fn main() {
         .insert_resource(InputLayer::Game)
         .insert_resource(InTurnPlayer(None))
         .add_event::<InputEvent>()
+        .add_event::<GameEvent>()
+        .add_event::<BotEvent>()
         .add_plugins((
             camera::CameraPlugin,
             map::MapPlugin,
@@ -256,7 +283,15 @@ fn main() {
             animation::SpriteAnimationPlugin,
         ))
         .add_systems(PreStartup, setup)
-        .add_systems(Update, (event_processor_system, interaction_event_system))
+        .add_systems(
+            Update,
+            (
+                event_processor_system,
+                interaction_event_system,
+                interaction_state_init_system,
+                bot_system,
+            ),
+        )
         .run();
 }
 
@@ -282,6 +317,21 @@ fn setup(
     ));
 }
 
+fn bot_system(
+    mut bot_events: EventReader<BotEvent>,
+    mut game: ResMut<Game>,
+    mut event_writer: EventWriter<GameEvent>,
+) {
+    let mut enqueue_event = move |e| {
+        event_writer.write(GameEvent(e));
+    };
+    for event in bot_events.read() {
+        if event == &BotEvent::RunBot {
+            info!("Running bot system");
+            bot::random_bot(&mut game.state, &mut enqueue_event).expect("Bot made an ActionError");
+        }
+    }
+}
 fn event_processor_system(
     mut commands: Commands,
     mut ep: ResMut<EventProcessor>,
@@ -305,10 +355,16 @@ fn event_processor_system(
     mut funds: Query<&mut Funds>,
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
     sprite_sheet: Res<SpriteSheet>,
+    mut event_reader: EventReader<GameEvent>,
+    mut bot_event_writer: EventWriter<BotEvent>,
 ) {
     // These are in tuples due to Bevy's system parameter limit
     let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths, mut carriers) = unit_queries;
     let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
+
+    for GameEvent(e) in event_reader.read() {
+        ep.queue.push_back(e.clone());
+    }
 
     ep.state = if let Some(state) = ep.state.take() {
         match state {
@@ -354,10 +410,13 @@ fn event_processor_system(
                         }
                     }
 
-                    if let Some(player) = game.get_player(player_number) {
+                    if let Some(player) = game.state.get_player(player_number) {
                         for mut fund in funds.iter_mut() {
                             *fund = Funds(player.funds);
                         }
+                    }
+                    if game.in_turn() == Some(&Player::Bot) {
+                        bot_event_writer.write(BotEvent::RunBot);
                     }
                     None
                 }
@@ -368,7 +427,7 @@ fn event_processor_system(
                     None
                 }
                 Event::Funds(player_number, _credits) => {
-                    if let Some(player) = game.get_player(player_number) {
+                    if let Some(player) = game.state.get_player(player_number) {
                         for mut fund in funds.iter_mut() {
                             *fund = Funds(player.funds);
                         }
@@ -467,8 +526,8 @@ fn event_processor_system(
                     None
                 }
                 Event::Unload(carrier_id, unit_id, position) => {
-                    let (_tile_id, tile) = game.tiles.get_at(&position).unwrap();
-                    let unit = game.units.get_ref(&unit_id).unwrap();
+                    let (_tile_id, tile) = game.state.tiles.get_at(&position).unwrap();
+                    let unit = game.state.units.get_ref(&unit_id).unwrap();
                     commands
                         .spawn((
                             map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
@@ -508,8 +567,8 @@ fn event_processor_system(
                     Some(EventProcess::Animation(unit_entity_id))
                 }
                 Event::Build(tile_id, unit_id, _unit_type, credits) => {
-                    let tile = game.tiles.get(tile_id).unwrap();
-                    let unit = game.units.get_ref(&unit_id).unwrap();
+                    let tile = game.state.tiles.get(tile_id).unwrap();
+                    let unit = game.state.units.get_ref(&unit_id).unwrap();
                     commands.spawn((
                         map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
                         Transform::from_translation(theme.unit_position(&tile.position())),
@@ -535,10 +594,26 @@ fn event_processor_system(
     }
 }
 
+fn interaction_state_init_system(
+    mut game_events: EventReader<GameEvent>,
+    mut interaction_state: ResMut<InteractionState>,
+    game: ResMut<Game>,
+) {
+    for GameEvent(event) in game_events.read() {
+        match event {
+            wars::game::Event::StartTurn(player_number) => {
+                if game.players.get(&player_number) == Some(&Player::Human) {
+                    *interaction_state = InteractionState::from_game(&game.state);
+                }
+            }
+            _ => (),
+        }
+    }
+}
 fn interaction_event_system(
     mut events: EventReader<InputEvent>,
+    mut game_events: EventWriter<GameEvent>,
     mut interaction_state: ResMut<InteractionState>,
-    mut event_processor: ResMut<EventProcessor>,
     mut game: ResMut<Game>,
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
@@ -549,7 +624,13 @@ fn interaction_event_system(
     mut action_menus: Query<(&mut Node, &mut Visibility), (With<ActionMenu>, Without<BuildMenu>)>,
     window: Single<&Window>,
 ) {
-    let mut enqueue_event = move |e| event_processor.queue.push_back(e);
+    let mut enqueue_event = move |e| {
+        game_events.write(GameEvent(e));
+    };
+    if game.state.state == wars::game::GameState::Pregame {
+        wars::game::action::start(&mut game.state, &mut enqueue_event)
+            .expect("Could not start game");
+    }
     let mut interaction_event_handler = |event, mut game: &mut wars::game::Game| {
         info!("Interaction event: {event:?}");
         match event {
@@ -756,8 +837,12 @@ fn interaction_event_system(
 
     for event in events.read() {
         info!("Input event: {event:?}");
+        if game.in_turn() == Some(&Player::Bot) {
+            info!("Bot in turn");
+            continue;
+        }
         interaction_state
-            .handle(*event, &mut game, &mut interaction_event_handler)
+            .handle(*event, &mut game.state, &mut interaction_event_handler)
             .expect("Interaction error");
     }
 }

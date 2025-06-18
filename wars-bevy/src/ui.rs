@@ -150,7 +150,7 @@ fn setup(
         Visibility::Hidden,
     ));
 
-    let player_number = game.in_turn_number();
+    let player_number = game.state.in_turn_number();
     let mut unit_types = enum_iterator::all::<wars::model::UnitType>().collect::<Vec<_>>();
     unit_types.sort_by_key(|t| wars::model::unit_type(*t).price);
     for unit_type in unit_types {
@@ -257,7 +257,7 @@ fn unload_menu_system(
     entity.despawn_related::<Children>();
 
     for unit_id in unit_ids {
-        let unit = game.units.get_ref(unit_id).unwrap();
+        let unit = game.state.units.get_ref(unit_id).unwrap();
         commands.spawn((
             ChildOf(entity_id),
             Button,

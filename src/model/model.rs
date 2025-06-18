@@ -462,8 +462,8 @@ pub fn unit_type(x: UnitType) -> UnitTypeData<'static> {
         Cruiser => 3000,
     };
     let carry_classes: &[UnitClass] = match x {
-        APC | CargoShip => &[UnitClass::Infantry, UnitClass::Vehicle],
-        TransportCopter => &[UnitClass::Infantry],
+        APC | TransportCopter => &[UnitClass::Infantry],
+        CargoShip => &[UnitClass::Infantry, UnitClass::Vehicle],
         _ => &[],
     };
     let carry_num = match x {

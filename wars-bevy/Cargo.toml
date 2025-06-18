@@ -12,6 +12,7 @@ derive_more = { version = "2.0.1", features = ["deref"] }
 enum-iterator = "2.1.0"
 itertools = "0.14.0"
 thiserror = "2.0.12"
+fastrand = "2.3.0"
 
 [dependencies.bevy]
 version = "0.16.0"
@@ -30,7 +31,6 @@ features = [
   "bevy_window",
   "bevy_ui",
   "bevy_log",
-  "bevy_animation",
   "default_font",
   "multi_threaded",
   "std",

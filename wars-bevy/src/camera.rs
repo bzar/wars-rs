@@ -9,7 +9,7 @@ impl Plugin for CameraPlugin {
 }
 
 fn add_camera(mut commands: Commands, game: Res<Game>, theme: Res<Theme>) {
-    let camera_transform = if let Some((min_x, min_y, max_x, max_y)) = game.tiles.rect() {
+    let camera_transform = if let Some((min_x, min_y, max_x, max_y)) = game.state.tiles.rect() {
         let center_x = (max_x - min_x) / 2;
         let center_y = (max_y - min_y) / 2;
         let (cx, cy, _) = theme.map_hex_center(center_x, center_y);

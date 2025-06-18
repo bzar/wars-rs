@@ -142,7 +142,7 @@ pub enum GameUpdateError {
 pub type GameUpdateResult<T> = Result<T, GameUpdateError>;
 pub type ActionResult<T> = Result<T, ActionError>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Event {
     StartTurn(PlayerNumber),
     EndTurn(PlayerNumber),

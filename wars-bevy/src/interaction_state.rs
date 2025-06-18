@@ -338,34 +338,41 @@ fn select_destination(
     };
 
     let mut action_options = HashSet::from([Action::Cancel]);
+    let mut attack_options = HashMap::new();
 
     if game.unit_can_stay_at(unit_id, &position).is_ok() {
         action_options.insert(Action::Wait);
 
-        if unit.can_deploy() && !unit.deployed {
-            action_options.insert(Action::Deploy);
+        if unit.can_deploy() {
+            if unit.deployed {
+                action_options.insert(Action::Undeploy);
+            } else {
+                action_options.insert(Action::Deploy);
+            }
         }
-    }
 
-    let attack_options = game.unit_attack_options(unit_id, &position);
+        attack_options = game.unit_attack_options(unit_id, &position);
 
-    if !attack_options.is_empty() {
-        action_options.insert(Action::Attack);
+        if !attack_options.is_empty() {
+            action_options.insert(Action::Attack);
+        }
+
+        if game.unit_can_capture_tile(unit_id, tile_id).is_ok() {
+            action_options.insert(Action::Capture);
+        }
+
+        if unit.carried.iter().any(|u| {
+            game.unit_unload_options(unit_id, &position, *u)
+                .is_some_and(|os| !os.is_empty())
+        }) {
+            action_options.insert(Action::Unload);
+        }
     }
 
     if game.unit_can_load_into_carrier_at(unit_id, &position) {
         action_options.insert(Action::Load);
     }
 
-    if game.unit_can_capture_tile(unit_id, tile_id).is_ok() {
-        action_options.insert(Action::Capture);
-    }
-    if unit.carried.iter().any(|u| {
-        game.unit_unload_options(unit_id, &position, *u)
-            .is_some_and(|os| !os.is_empty())
-    }) {
-        action_options.insert(Action::Unload);
-    }
     emit(InteractionEvent::SelectAction(action_options.clone()), game);
     Ok(InteractionState::SelectAction {
         unit_id,
@@ -476,7 +483,10 @@ fn select_action(
             Ok(InteractionState::reset(game, emit))
         }
         Action::Unload => {
-            let unit = game.units.get_ref(&unit_id).expect("Unit does not exist");
+            let unit = game
+                .units
+                .get_ref(&unit_id)
+                .ok_or(wars::game::ActionError::UnitNotFound)?;
             emit(
                 InteractionEvent::SelectUnloadUnit(unit.carried.clone()),
                 game,
@@ -501,7 +511,7 @@ fn select_unit_to_unload(
     unit_id: UnitId,
     mut emit: impl FnMut(InteractionEvent, &mut Game),
 ) -> InteractionResult<InteractionState> {
-    let position = path.last().expect("Invalid path");
+    let position = path.last().ok_or(wars::game::ActionError::InvalidPath)?;
     let unload_options = game
         .unit_unload_options(carrier_id, position, unit_id)
         .ok_or(wars::game::ActionError::CannotUnload)?;
@@ -535,5 +545,5 @@ fn select_unit_type_to_build(
 }
 
 fn setup(game: Res<crate::Game>, mut interaction_state: ResMut<InteractionState>) {
-    *interaction_state = InteractionState::from_game(&game);
+    *interaction_state = InteractionState::from_game(&game.state);
 }
