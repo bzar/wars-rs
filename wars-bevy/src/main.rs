@@ -170,7 +170,7 @@ enum EventProcess {
     Animation(Entity),
 }
 #[derive(Resource, Default)]
-struct EventProcessor {
+struct Visualizer {
     pub state: Option<EventProcess>,
     pub queue: VecDeque<wars::game::Event>,
 }
@@ -262,13 +262,13 @@ fn main() {
     let state = wars::game::Game::new(map, &[0, 1]);
     let players = [(1, Player::Human), (2, Player::Bot)].into_iter().collect();
 
-    let event_processor = EventProcessor::default();
+    let visualizer = Visualizer::default();
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest()))
         .insert_resource(Game { state, players })
         .insert_resource(Theme(theme))
         .insert_resource(SpriteSheet::default())
-        .insert_resource(event_processor)
+        .insert_resource(visualizer)
         .insert_resource(VisibleActionButtons::default())
         .insert_resource(InputLayer::Game)
         .insert_resource(InTurnPlayer(None))
@@ -286,7 +286,7 @@ fn main() {
         .add_systems(
             Update,
             (
-                event_processor_system,
+                visualizer_system,
                 interaction_event_system,
                 interaction_state_init_system,
                 bot_system,
@@ -332,9 +332,9 @@ fn bot_system(
         }
     }
 }
-fn event_processor_system(
+fn visualizer_system(
     mut commands: Commands,
-    mut ep: ResMut<EventProcessor>,
+    mut visualizer: ResMut<Visualizer>,
     game: Res<Game>,
     theme: Res<Theme>,
     mut in_turn_player: ResMut<InTurnPlayer>,
@@ -363,10 +363,10 @@ fn event_processor_system(
     let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
 
     for GameEvent(e) in event_reader.read() {
-        ep.queue.push_back(e.clone());
+        visualizer.queue.push_back(e.clone());
     }
 
-    ep.state = if let Some(state) = ep.state.take() {
+    visualizer.state = if let Some(state) = visualizer.state.take() {
         match state {
             EventProcess::NoOp(event) => {
                 info!("Skipping event {event:?}");
@@ -396,11 +396,11 @@ fn event_processor_system(
             .iter()
             .find_map(|(entity_id, Tile(tid))| (*tid == tile_id).then_some(entity_id))
     };
-    if ep.state.is_none() {
-        if let Some(event) = ep.queue.pop_front() {
+    if visualizer.state.is_none() {
+        if let Some(event) = visualizer.queue.pop_front() {
             info!("Game event: {event:?}");
             use wars::game::Event;
-            ep.state = match event {
+            visualizer.state = match event {
                 Event::StartTurn(player_number) => {
                     *in_turn_player = InTurnPlayer(Some(player_number));
                     if let Some(player_color) = theme.spec.player_colors.get(player_number as usize)
