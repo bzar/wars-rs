@@ -362,11 +362,12 @@ fn visualizer_system(
     let (units, mut unit_moveds, mut unit_deployeds, mut unit_healths, mut carriers) = unit_queries;
     let (tiles, mut tile_owners, mut tile_capture_states) = tile_queries;
 
+    // Enqueue new game events to visualization queue
     for GameEvent(e) in event_reader.read() {
         visualizer.queue.push_back(e.clone());
     }
 
-    visualizer.state = if let Some(state) = visualizer.state.take() {
+    visualizer.state = visualizer.state.take().and_then(|state| {
         match state {
             EventProcess::NoOp(event) => {
                 info!("Skipping event {event:?}");
@@ -382,9 +383,7 @@ fn visualizer_system(
                 }
             }
         }
-    } else {
-        None
-    };
+    });
 
     let find_unit_entity_id = |unit_id| {
         units
