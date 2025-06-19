@@ -161,6 +161,10 @@ impl InteractionState {
                 emit(InteractionEvent::CancelSelectUnitToBuild, game);
                 InteractionState::reset(game, emit)
             }
+            InteractionState::SelectAction { .. } => {
+                emit(InteractionEvent::CancelSelectAction, game);
+                InteractionState::reset(game, emit)
+            }
             InteractionState::None => return Err(Error::InvalidState),
             other @ _ => other,
         };
@@ -291,6 +295,9 @@ fn select_unit_or_base(
     if let Some(unit_id) = tile.unit {
         if units.contains(&unit_id) {
             if let Some(destination_options) = game.unit_move_options(unit_id) {
+                if destination_options.len() < 2 {
+                    return select_destination(game, unit_id, tile_id, destination_options, emit);
+                }
                 emit(
                     InteractionEvent::SelectDestination(
                         destination_options.keys().cloned().collect(),
