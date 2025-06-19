@@ -444,7 +444,10 @@ fn visualizer_system(
                 Event::Move(unit_id, path) => {
                     if path.len() > 1 {
                         let unit_entity_id = find_unit_entity_id(unit_id).unwrap();
-                        let waypoints = path.into_iter().map(|pos| theme.unit_position(&pos));
+                        let waypoints = path
+                            .into_iter()
+                            .map(|pos| game.state.tiles.get_at(&pos).expect("No such tile"))
+                            .map(|(_tile_id, tile)| theme.unit_position(&tile));
                         animation::animate_move_unit(&mut commands, unit_entity_id, waypoints);
                         Some(EventProcess::Animation(unit_entity_id))
                     } else {
@@ -530,7 +533,7 @@ fn visualizer_system(
                     commands
                         .spawn((
                             map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                            Transform::from_translation(theme.unit_position(&tile.position())),
+                            Transform::from_translation(theme.unit_position(&tile)),
                         ))
                         .insert(Moved(true));
                     let carrier_entity_id = find_unit_entity_id(carrier_id).unwrap();
@@ -570,7 +573,7 @@ fn visualizer_system(
                     let unit = game.state.units.get_ref(&unit_id).unwrap();
                     commands.spawn((
                         map::unit_bundle(unit_id, unit, &theme, &sprite_sheet),
-                        Transform::from_translation(theme.unit_position(&tile.position())),
+                        Transform::from_translation(theme.unit_position(&tile)),
                     ));
                     for mut fund in funds.iter_mut() {
                         *fund = fund.deduct(credits);
