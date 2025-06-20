@@ -1,8 +1,8 @@
 use crate::{
-    CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot, DamageHundredsDigit,
-    DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed, Game, Health,
-    HealthOnesDigit, HealthTensDigit, InputEvent, InputLayer, Moved, Owner, Prop, SpriteSheet,
-    Theme, Tile, TileHighlight, Unit, UnitHighlight,
+    AttackRangeIndicator, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot,
+    DamageHundredsDigit, DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed,
+    Game, Health, HealthOnesDigit, HealthTensDigit, InAttackRange, InputEvent, InputLayer, Moved,
+    Owner, Prop, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight,
 };
 use bevy::{asset::RenderAssetUsages, prelude::*};
 
@@ -22,6 +22,7 @@ impl Plugin for MapPlugin {
                 damage_number_system,
                 carrier_slot_system,
                 cursor_system,
+                tile_attack_range_system,
             ),
         );
     }
@@ -163,6 +164,21 @@ fn unit_deployed_emblem_system(
     for (ChildOf(unit), mut visibility) in emblems.iter_mut() {
         if let Ok(Deployed(deployed)) = changed_deploys.get(*unit) {
             *visibility = if *deployed {
+                Visibility::Visible
+            } else {
+                Visibility::Hidden
+            };
+        }
+    }
+}
+
+fn tile_attack_range_system(
+    changed: Query<&InAttackRange, Changed<InAttackRange>>,
+    mut indicators: Query<(&ChildOf, &mut Visibility), With<AttackRangeIndicator>>,
+) {
+    for (ChildOf(tile), mut visibility) in indicators.iter_mut() {
+        if let Ok(InAttackRange(in_range)) = changed.get(*tile) {
+            *visibility = if *in_range {
                 Visibility::Visible
             } else {
                 Visibility::Hidden
@@ -562,9 +578,16 @@ fn tile_bundle(
     (
         Tile(tile_id),
         Owner(tile.owner.unwrap_or(0)),
+        InAttackRange(false),
         TileHighlight::Normal,
         capture_state,
         sprite_sheet.sprite(theme_tile.tile_index),
+        children![(
+            AttackRangeIndicator,
+            sprite_sheet.sprite(theme.masks.attack_hex_mask_index),
+            Transform::from_xyz(0.0, 0.0, 0.15),
+            Visibility::Hidden,
+        )],
     )
 }
 

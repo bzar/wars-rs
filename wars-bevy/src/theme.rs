@@ -31,6 +31,12 @@ pub struct Hex {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Masks {
+    pub attack_hex: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CaptureBar {
     pub bit_height: u32,
     pub total_bits: u32,
@@ -75,6 +81,7 @@ pub struct ThemeSpec {
     pub units: Vec<Vec<String>>,
     pub numbers: Numbers,
     pub emblems: Emblems,
+    pub masks: Masks,
 }
 
 pub type Index = usize;
@@ -91,6 +98,9 @@ pub struct ThemeNumber {
 }
 pub struct ThemeEmblem {
     pub emblem_index: Index,
+}
+pub struct ThemeMasks {
+    pub attack_hex_mask_index: Index,
 }
 pub struct ThemeCaptureBar {
     pub bar_index: Index,
@@ -111,6 +121,7 @@ pub struct Theme {
     pub deploy_emblem: ThemeEmblem,
     pub capture_bar: ThemeCaptureBar,
     pub carrier_slot: ThemeCarrierSlot,
+    pub masks: ThemeMasks,
 }
 
 impl From<ThemeSpec> for Theme {
@@ -200,6 +211,9 @@ impl From<ThemeSpec> for Theme {
                 .unwrap(),
             height: spec.carrier_slot.slot_height,
         };
+        let masks = ThemeMasks {
+            attack_hex_mask_index: label_indices.get(&spec.masks.attack_hex).copied().unwrap(),
+        };
         Self {
             spec,
             tiles,
@@ -209,6 +223,7 @@ impl From<ThemeSpec> for Theme {
             deploy_emblem,
             capture_bar,
             carrier_slot,
+            masks,
         }
     }
 }

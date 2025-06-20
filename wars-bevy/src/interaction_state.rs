@@ -30,11 +30,13 @@ pub enum InteractionState {
         path: Vec<Position>,
         action_options: HashSet<Action>,
         attack_options: HashMap<UnitId, wars::game::Health>,
+        tiles_in_range: HashSet<TileId>,
     },
     SelectAttackTarget {
         unit_id: UnitId,
         path: Vec<Position>,
         attack_options: HashMap<UnitId, wars::game::Health>,
+        tiles_in_range: HashSet<TileId>,
     },
     SelectUnitToBuild {
         tile_id: TileId,
@@ -65,10 +67,10 @@ pub enum InteractionEvent {
     SelectUnitOrBase(HashSet<UnitId>, HashSet<TileId>),
     SelectDestination(HashSet<Position>),
     CancelSelectDestination,
-    SelectAction(HashSet<Action>),
+    SelectAction(HashSet<Action>, HashSet<TileId>),
     SelectedAction(Action),
     CancelSelectAction,
-    SelectAttackTarget(HashMap<UnitId, wars::game::Health>),
+    SelectAttackTarget(HashMap<UnitId, wars::game::Health>, HashSet<TileId>),
     CancelSelectAttackTarget,
     SelectUnloadUnit(Vec<UnitId>),
     CancelSelectUnloadUnit,
@@ -143,6 +145,7 @@ impl InteractionState {
                 unit_id,
                 path,
                 attack_options,
+                ..
             } => select_attack_target(game, unit_id, path, tile_id, attack_options, emit)?,
             InteractionState::SelectUnloadDestination {
                 carrier_id,
@@ -184,6 +187,7 @@ impl InteractionState {
                 path,
                 action_options,
                 attack_options,
+                tiles_in_range,
             } => select_action(
                 game,
                 unit_id,
@@ -191,6 +195,7 @@ impl InteractionState {
                 action,
                 action_options,
                 attack_options,
+                tiles_in_range,
                 emit,
             )?,
             InteractionState::SelectDestination { .. } if action == Action::Cancel => {
@@ -347,6 +352,7 @@ fn select_destination(
 
     let mut action_options = HashSet::from([Action::Cancel]);
     let mut attack_options = HashMap::new();
+    let mut tiles_in_range = HashSet::new();
 
     if game.unit_can_stay_at(unit_id, &position).is_ok() {
         action_options.insert(Action::Wait);
@@ -360,6 +366,19 @@ fn select_destination(
         }
 
         attack_options = game.unit_attack_options(unit_id, &position);
+
+        tiles_in_range = game
+            .tiles
+            .iter_with_ids()
+            .map(|(tid, t)| (tid, tile.position().distance_to(&t.position())))
+            .filter(|(_, distance)| {
+                unit.unit_type_data()
+                    .weapons
+                    .iter()
+                    .any(|w| (wars::model::weapon(*w).range_map)(*distance).is_some())
+            })
+            .map(|(tid, _)| *tid)
+            .collect();
 
         if !attack_options.is_empty() {
             action_options.insert(Action::Attack);
@@ -381,12 +400,16 @@ fn select_destination(
         action_options.insert(Action::Load);
     }
 
-    emit(InteractionEvent::SelectAction(action_options.clone()), game);
+    emit(
+        InteractionEvent::SelectAction(action_options.clone(), tiles_in_range.clone()),
+        game,
+    );
     Ok(InteractionState::SelectAction {
         unit_id,
         path,
         action_options,
         attack_options,
+        tiles_in_range,
     })
 }
 fn select_attack_target(
@@ -452,6 +475,7 @@ fn select_action(
     action: Action,
     action_options: HashSet<Action>,
     attack_options: HashMap<UnitId, wars::game::Health>,
+    tiles_in_range: HashSet<TileId>,
     mut emit: impl FnMut(InteractionEvent, &mut Game),
 ) -> InteractionResult<InteractionState> {
     if !action_options.contains(&action) {
@@ -465,13 +489,17 @@ fn select_action(
         }
         Action::Attack => {
             emit(
-                InteractionEvent::SelectAttackTarget(attack_options.clone()),
+                InteractionEvent::SelectAttackTarget(
+                    attack_options.clone(),
+                    tiles_in_range.clone(),
+                ),
                 game,
             );
             Ok(InteractionState::SelectAttackTarget {
                 unit_id,
                 path,
                 attack_options,
+                tiles_in_range,
             })
         }
         Action::Capture => {

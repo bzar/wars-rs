@@ -92,6 +92,12 @@ struct Deployed(bool);
 struct Moved(bool);
 
 #[derive(Component)]
+struct InAttackRange(bool);
+
+#[derive(Component)]
+struct AttackRangeIndicator;
+
+#[derive(Component)]
 enum CaptureState {
     Capturing(u32),
     Recovering(u32),
@@ -621,6 +627,7 @@ fn interaction_event_system(
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
+    mut tile_in_attack_ranges: Query<(&Tile, &mut InAttackRange)>,
     mut build_menus: Query<(&mut BuildMenu, &mut Visibility), Without<ActionMenu>>,
     mut unload_menus: Query<&mut UnloadMenu>,
     mut damage_indicators: Query<(&Unit, &mut DamageIndicator)>,
@@ -655,6 +662,9 @@ fn interaction_event_system(
                 }
                 for (_, mut damage_indicator) in damage_indicators.iter_mut() {
                     *damage_indicator = DamageIndicator::Hidden;
+                }
+                for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(false);
                 }
                 wars::game::action::move_and_attack(
                     game.deref_mut(),
@@ -731,7 +741,7 @@ fn interaction_event_system(
                     *highlight = TileHighlight::Normal;
                 }
             }
-            InteractionEvent::SelectAction(ref options) => {
+            InteractionEvent::SelectAction(ref options, ref tiles_in_range) => {
                 action_menus.iter_mut().for_each(|(mut node, mut v)| {
                     *v = Visibility::Inherited;
                     if let Some(position) = window.cursor_position() {
@@ -743,13 +753,19 @@ fn interaction_event_system(
                     *highlight = TileHighlight::Normal;
                 }
                 *visible_action_buttons = VisibleActionButtons(options.clone());
+                for (Tile(tid), mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(tiles_in_range.contains(tid))
+                }
             }
             InteractionEvent::SelectedAction(_) => {
                 action_menus
                     .iter_mut()
                     .for_each(|(_, mut v)| *v = Visibility::Hidden);
+                for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(false);
+                }
             }
-            InteractionEvent::SelectAttackTarget(ref options) => {
+            InteractionEvent::SelectAttackTarget(ref options, ref tiles_in_range) => {
                 *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
                     *highlight = if options.contains_key(&uid) {
@@ -762,6 +778,9 @@ fn interaction_event_system(
                     if let Some(damage) = options.get(uid) {
                         *damage_indicator = DamageIndicator::Visible(*damage);
                     }
+                }
+                for (Tile(tid), mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(tiles_in_range.contains(tid))
                 }
             }
             InteractionEvent::SelectUnloadUnit(ref options) => {
@@ -811,6 +830,9 @@ fn interaction_event_system(
             }
             InteractionEvent::CancelSelectAction => {
                 visible_action_buttons.clear();
+                for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(false);
+                }
             }
             InteractionEvent::CancelSelectAttackTarget => {
                 visible_action_buttons.clear();
@@ -819,6 +841,9 @@ fn interaction_event_system(
                 }
                 for (_, mut damage_indicator) in damage_indicators.iter_mut() {
                     *damage_indicator = DamageIndicator::Hidden;
+                }
+                for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
+                    *in_attack_range = InAttackRange(false);
                 }
             }
             InteractionEvent::CancelSelectUnloadUnit => {
