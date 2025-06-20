@@ -210,6 +210,7 @@ enum Action {
 #[derive(Event, Debug, Clone, Copy)]
 enum InputEvent {
     MapSelect(wars::game::TileId),
+    MapHover(wars::game::TileId),
     Action(Action),
     UnloadUnit(wars::game::UnitId),
     BuildUnit(wars::game::UnitType),

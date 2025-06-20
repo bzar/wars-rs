@@ -4,7 +4,7 @@ use crate::{
     HealthOnesDigit, HealthTensDigit, InputEvent, InputLayer, Moved, Owner, Prop, SpriteSheet,
     Theme, Tile, TileHighlight, Unit, UnitHighlight,
 };
-use bevy::prelude::*;
+use bevy::{asset::RenderAssetUsages, prelude::*};
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -21,6 +21,7 @@ impl Plugin for MapPlugin {
                 health_number_system,
                 damage_number_system,
                 carrier_slot_system,
+                cursor_system,
             ),
         );
     }
@@ -43,6 +44,7 @@ fn setup(
                     Pickable::default(),
                 ))
                 .observe(tile_click_observer)
+                .observe(tile_hover_observer)
                 .id();
             let (ox, oy) = theme.hex_sprite_center_offset();
             if theme_tile.prop_index.is_some() {
@@ -86,6 +88,74 @@ fn setup(
     }
 }
 
+#[derive(Component)]
+struct HexCursor;
+
+fn cursor_system(
+    mut commands: Commands,
+    game: Res<Game>,
+    theme: Res<Theme>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    mut cursors: Query<&mut Transform, With<HexCursor>>,
+    mut events: EventReader<InputEvent>,
+) {
+    if let Ok(mut cursor) = cursors.single_mut() {
+        for event in events.read() {
+            match event {
+                InputEvent::MapHover(tile_id) => {
+                    let Some(tile) = game.state.tiles.get(*tile_id) else {
+                        return;
+                    };
+                    let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
+                    let Some(theme_tile) = theme.tile(&tile) else {
+                        return;
+                    };
+                    cursor.translation = Vec3::new(
+                        x as f32,
+                        (y + (theme.spec.image.height as i32 - theme.spec.hex.height as i32) / 2)
+                            as f32
+                            - theme_tile.offset as f32,
+                        z as f32 + 1.0,
+                    );
+                }
+                _ => (),
+            }
+        }
+    } else {
+        let w = theme.spec.hex.width as f32 / 2.0 + 2.0;
+        let h = theme.spec.hex.height as f32 / 2.0 + 2.0;
+        let t = theme.spec.hex.tri_width as f32 + 2.0;
+        commands.spawn((
+            HexCursor,
+            Mesh2d(
+                meshes.add(
+                    Mesh::new(
+                        bevy::render::mesh::PrimitiveTopology::TriangleStrip,
+                        RenderAssetUsages::default(),
+                    )
+                    .with_inserted_attribute(
+                        Mesh::ATTRIBUTE_POSITION,
+                        [
+                            (w, 0.0),
+                            (w - t, h),
+                            (w - t, -h),
+                            (t - w, h),
+                            (t - w, -h),
+                            (-w, 0.0),
+                        ]
+                        .into_iter()
+                        .map(|(x, y)| Vec3::new(x, y, 0.0))
+                        .collect::<Vec<_>>(),
+                    ),
+                ),
+            ),
+            MeshMaterial2d(materials.add(Color::from(
+                bevy::color::palettes::basic::WHITE.with_alpha(0.2),
+            ))),
+        ));
+    }
+}
 fn unit_deployed_emblem_system(
     changed_deploys: Query<&Deployed, Changed<Deployed>>,
     mut emblems: Query<(&ChildOf, &mut Visibility), With<DeployEmblem>>,
@@ -174,6 +244,21 @@ fn tile_click_observer(
     };
 
     events.write(InputEvent::MapSelect(*tile_id));
+}
+fn tile_hover_observer(
+    trigger: Trigger<Pointer<Over>>,
+    tile_query: Query<&Tile>,
+    input_layer: Res<InputLayer>,
+    mut events: EventWriter<InputEvent>,
+) {
+    if *input_layer == InputLayer::UI {
+        return;
+    }
+    let Ok(Tile(tile_id)) = tile_query.get(trigger.target()) else {
+        return;
+    };
+
+    events.write(InputEvent::MapHover(*tile_id));
 }
 
 fn health_number_system(

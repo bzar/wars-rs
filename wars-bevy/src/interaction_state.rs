@@ -115,6 +115,7 @@ impl InteractionState {
         emit: impl FnMut(InteractionEvent, &mut Game),
     ) -> InteractionResult {
         match event {
+            InputEvent::MapHover(_) => Ok(()),
             InputEvent::MapSelect(tile_id) => self.select_tile(game, tile_id, emit),
             InputEvent::Action(action) => self.select_action(game, action, emit),
             InputEvent::UnloadUnit(unit_id) => self.select_unit_to_unload(game, unit_id, emit),
