@@ -66,6 +66,7 @@ pub enum InteractionEvent {
     BuildUnit(TileId, UnitType),
     SelectUnitOrBase(HashSet<UnitId>, HashSet<TileId>),
     SelectDestination(HashSet<Position>),
+    SelectedDestination(UnitId, Vec<Position>),
     CancelSelectDestination,
     SelectAction(HashSet<Action>, HashSet<TileId>),
     SelectedAction(Action),
@@ -337,7 +338,7 @@ fn select_destination(
 ) -> InteractionResult<InteractionState> {
     let unit = game
         .units
-        .get_ref(&unit_id)
+        .get(unit_id)
         .ok_or(wars::game::ActionError::UnitNotFound)?;
     let tile = game
         .tiles
@@ -349,6 +350,11 @@ fn select_destination(
         emit(InteractionEvent::CancelSelectDestination, game);
         return Ok(InteractionState::reset(game, emit));
     };
+
+    emit(
+        InteractionEvent::SelectedDestination(unit_id, path.clone()),
+        game,
+    );
 
     let mut action_options = HashSet::from([Action::Cancel]);
     let mut attack_options = HashMap::new();

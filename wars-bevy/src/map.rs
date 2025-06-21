@@ -2,7 +2,8 @@ use crate::{
     AttackRangeIndicator, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot,
     DamageHundredsDigit, DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed,
     Game, Health, HealthOnesDigit, HealthTensDigit, InAttackRange, InputEvent, InputLayer, Moved,
-    Owner, Prop, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight,
+    Owner, Prop, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight, UnitMovePreview,
+    UnitMovePreviewProp,
 };
 use bevy::{asset::RenderAssetUsages, prelude::*};
 
@@ -23,6 +24,8 @@ impl Plugin for MapPlugin {
                 carrier_slot_system,
                 cursor_system,
                 tile_attack_range_system,
+                unit_move_preview_added_system,
+                unit_move_preview_cleanup_system,
             ),
         );
     }
@@ -201,6 +204,51 @@ fn unit_highlight_system(
             UnitHighlight::Target => {
                 sprite.color = Color::srgba(1.0, 0.1, 0.1, 1.0).with_alpha(sprite.color.alpha())
             }
+        }
+    }
+}
+fn unit_move_preview_added_system(
+    mut commands: Commands,
+    game: Res<Game>,
+    theme: Res<Theme>,
+    added_move_previews: Query<(Entity, &UnitMovePreview), Added<UnitMovePreview>>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+) {
+    let Some(player_color): Option<Color> = theme
+        .spec
+        .player_colors
+        .get(game.state.in_turn_number().unwrap_or(0) as usize)
+        .map(Into::into)
+    else {
+        return;
+    };
+    for (entity, UnitMovePreview(path)) in added_move_previews.iter() {
+        if path.len() > 1 {
+            let waypoints = path
+                .into_iter()
+                .map(|pos| game.state.tiles.get_at(&pos).expect("No such tile"))
+                .map(|(_tile_id, tile)| theme.unit_position(&tile));
+
+            for translation in waypoints {
+                commands.spawn((
+                    UnitMovePreviewProp(entity),
+                    Mesh2d(meshes.add(Circle::new(8.0))),
+                    MeshMaterial2d(materials.add(player_color)),
+                    Transform::from_translation(translation),
+                ));
+            }
+        }
+    }
+}
+fn unit_move_preview_cleanup_system(
+    mut commands: Commands,
+    move_preview_props: Query<(Entity, &UnitMovePreviewProp)>,
+    move_previews: Query<Entity, With<UnitMovePreview>>,
+) {
+    for (entity, UnitMovePreviewProp(parent)) in move_preview_props.iter() {
+        if move_previews.get(*parent).is_err() {
+            commands.entity(entity).despawn();
         }
     }
 }

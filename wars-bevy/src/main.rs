@@ -111,6 +111,12 @@ struct CaptureBar;
 struct CaptureBarBit(u32);
 
 #[derive(Component)]
+struct UnitMovePreview(Vec<wars::game::Position>);
+
+#[derive(Component)]
+struct UnitMovePreviewProp(Entity);
+
+#[derive(Component)]
 enum TileHighlight {
     Normal,
     Unmovable,
@@ -620,6 +626,7 @@ fn interaction_state_init_system(
     }
 }
 fn interaction_event_system(
+    mut commands: Commands,
     mut events: EventReader<InputEvent>,
     mut game_events: EventWriter<GameEvent>,
     mut interaction_state: ResMut<InteractionState>,
@@ -627,6 +634,8 @@ fn interaction_event_system(
     mut visible_action_buttons: ResMut<VisibleActionButtons>,
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
+    unit_entities: Query<(&Unit, Entity)>,
+    entities_with_move_previews: Query<Entity, With<UnitMovePreview>>,
     mut tile_in_attack_ranges: Query<(&Tile, &mut InAttackRange)>,
     mut build_menus: Query<(&mut BuildMenu, &mut Visibility), Without<ActionMenu>>,
     mut unload_menus: Query<&mut UnloadMenu>,
@@ -644,7 +653,11 @@ fn interaction_event_system(
     let mut interaction_event_handler = |event, mut game: &mut wars::game::Game| {
         info!("Interaction event: {event:?}");
         match event {
-            InteractionEvent::SelectUnitOrBase(_units, _tiles) => {}
+            InteractionEvent::SelectUnitOrBase(_units, _tiles) => {
+                entities_with_move_previews.iter().for_each(|entity| {
+                    commands.entity(entity).remove::<UnitMovePreview>();
+                });
+            }
             InteractionEvent::MoveAndWait(unit_id, ref path) => {
                 visible_action_buttons.clear();
                 wars::game::action::move_and_wait(
@@ -735,6 +748,17 @@ fn interaction_event_system(
                         TileHighlight::Unmovable
                     };
                 }
+            }
+            InteractionEvent::SelectedDestination(unit_id, ref path) => {
+                unit_entities
+                    .iter()
+                    .find_map(|(Unit(uid), entity)| (unit_id == *uid).then_some(entity))
+                    .map(|entity| {
+                        commands
+                            .entity(entity)
+                            .remove::<UnitMovePreview>()
+                            .insert(UnitMovePreview(path.clone()));
+                    });
             }
             InteractionEvent::CancelSelectDestination => {
                 for (_, mut highlight) in tile_highlights.iter_mut() {
