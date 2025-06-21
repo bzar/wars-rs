@@ -85,11 +85,15 @@ pub struct ThemeSpec {
 }
 
 pub type Index = usize;
+
+#[derive(Clone)]
 pub struct ThemeTile {
     pub tile_index: Index,
     pub prop_index: Option<Index>,
     pub offset: i32,
 }
+
+#[derive(Clone)]
 pub struct ThemeUnit {
     pub unit_index: Index,
 }
@@ -271,6 +275,58 @@ impl Theme {
         let (x, y, z) = self.map_hex_center(tile.x, tile.y);
         let offset = self.tile(tile).map(|tt| tt.offset).unwrap_or(0);
         Vec3::new((x + ox) as f32, (y + oy - offset) as f32, z as f32 + 1.5)
+    }
+
+    pub fn recolor_unit(
+        &self,
+        index: Index,
+        player_number: Option<wars::game::PlayerNumber>,
+    ) -> Option<ThemeUnit> {
+        if let Some(unit_type) = self
+            .units
+            .iter()
+            .find_map(|((unit_type, _), tu)| (index == tu.unit_index).then_some(unit_type))
+        {
+            return self
+                .units
+                .get(&(*unit_type, player_number.unwrap_or(0) as usize))
+                .cloned();
+        }
+        None
+    }
+
+    pub fn recolor_tile(
+        &self,
+        index: Index,
+        player_number: Option<wars::game::PlayerNumber>,
+    ) -> Option<ThemeTile> {
+        if let Some((terrain, subtype)) =
+            self.tiles.iter().find_map(|((terrain, subtype, _), tt)| {
+                (index == tt.tile_index).then_some((terrain, subtype))
+            })
+        {
+            return self
+                .tiles
+                .get(&(*terrain, *subtype, player_number.unwrap_or(0) as usize))
+                .cloned();
+        }
+        None
+    }
+
+    pub fn recolor(
+        &self,
+        index: Index,
+        player_number: Option<wars::game::PlayerNumber>,
+    ) -> Option<Index> {
+        if let Some(theme_unit) = self.recolor_unit(index, player_number) {
+            return Some(theme_unit.unit_index);
+        }
+
+        if let Some(theme_tile) = self.recolor_tile(index, player_number) {
+            return Some(theme_tile.tile_index);
+        }
+
+        None
     }
 }
 

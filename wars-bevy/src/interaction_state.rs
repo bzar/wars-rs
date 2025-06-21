@@ -262,6 +262,27 @@ impl InteractionState {
         game: &mut Game,
         mut emit: impl FnMut(InteractionEvent, &mut Game),
     ) -> InteractionResult {
+        match self {
+            InteractionState::SelectDestination { .. } => {
+                emit(InteractionEvent::CancelSelectDestination, game);
+            }
+            InteractionState::SelectAction { .. } => {
+                emit(InteractionEvent::CancelSelectAction, game);
+            }
+            InteractionState::SelectAttackTarget { .. } => {
+                emit(InteractionEvent::CancelSelectAttackTarget, game);
+            }
+            InteractionState::SelectUnitToBuild { .. } => {
+                emit(InteractionEvent::CancelSelectUnitToBuild, game);
+            }
+            InteractionState::SelectUnitToUnload { .. } => {
+                emit(InteractionEvent::CancelSelectUnloadUnit, game);
+            }
+            InteractionState::SelectUnloadDestination { .. } => {
+                emit(InteractionEvent::CancelSelectUnloadDestination, game);
+            }
+            _ => (),
+        }
         emit(InteractionEvent::EndTurn, game);
         *self = InteractionState::reset(game, emit);
         Ok(())

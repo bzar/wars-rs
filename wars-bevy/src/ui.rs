@@ -176,6 +176,7 @@ fn setup(
             ))
             .id();
         commands.spawn((
+            PlayerColored,
             sprite_sheet.image(theme.unit(unit_type, player_number).unwrap().unit_index),
             ChildOf(button),
         ));
@@ -206,17 +207,18 @@ fn button_bundle(text: &str, icon: Handle<Image>) -> impl Bundle {
             display: Display::None,
             ..default()
         },
-        children![(
-            /*Text::new(text),
-            TextFont {
-                //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                font_size: 24.0,
-                ..default()
-            },
-            TextColor(Color::BLACK),*/
-            ImageNode::new(icon),
-            PlayerColored
-        )],
+        children![
+            (
+                /*Text::new(text),
+                TextFont {
+                    //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                    font_size: 24.0,
+                    ..default()
+                },
+                TextColor(Color::BLACK),*/
+                ImageNode::new(icon)
+            )
+        ],
     )
 }
 
@@ -400,6 +402,12 @@ fn player_colored_ui_system(
         return;
     };
     for mut image_node in image_nodes.iter_mut() {
-        image_node.color = player_color.into();
+        if let Some(atlas_image) = image_node.texture_atlas.as_mut() {
+            theme
+                .recolor(atlas_image.index, in_turn.0)
+                .map(move |i| atlas_image.index = i);
+        } else {
+            image_node.color = player_color.into();
+        }
     }
 }

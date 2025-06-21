@@ -273,7 +273,9 @@ fn main() {
     let theme: theme::Theme = theme::Theme::from_json(THEME_JSON).unwrap();
     let map = wars::game::Map::from_json(THIRD_PARTY_MAP).unwrap();
     let state = wars::game::Game::new(map, &[0, 1]);
-    let players = [(1, Player::Human), (2, Player::Bot)].into_iter().collect();
+    let players = [(1, Player::Human), (2, Player::Human)]
+        .into_iter()
+        .collect();
 
     let visualizer = Visualizer::default();
     App::new()
