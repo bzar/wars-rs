@@ -6,7 +6,7 @@ use wars::{
     model::UnitClass,
 };
 
-use crate::{Action, InputEvent};
+use crate::{components::Action, components::InputEvent};
 
 pub struct InteractionStatePlugin;
 
@@ -320,23 +320,21 @@ fn select_unit_or_base(
         .tiles
         .get(tile_id)
         .ok_or(wars::game::ActionError::TileNotFound)?;
-    if let Some(unit_id) = tile.unit {
-        if units.contains(&unit_id) {
-            if let Some(destination_options) = game.unit_move_options(unit_id) {
-                if destination_options.len() < 2 {
-                    return select_destination(game, unit_id, tile_id, destination_options, emit);
-                }
-                emit(
-                    InteractionEvent::SelectDestination(
-                        destination_options.keys().cloned().collect(),
-                    ),
-                    game,
-                );
-                return Ok(InteractionState::SelectDestination {
-                    unit_id,
-                    destination_options,
-                });
+    if let Some(unit_id) = tile.unit
+        && units.contains(&unit_id)
+    {
+        if let Some(destination_options) = game.unit_move_options(unit_id) {
+            if destination_options.len() < 2 {
+                return select_destination(game, unit_id, tile_id, destination_options, emit);
             }
+            emit(
+                InteractionEvent::SelectDestination(destination_options.keys().cloned().collect()),
+                game,
+            );
+            return Ok(InteractionState::SelectDestination {
+                unit_id,
+                destination_options,
+            });
         }
     } else if tiles.contains(&tile_id) {
         emit(
@@ -607,6 +605,6 @@ fn select_unit_type_to_build(
     Ok(InteractionState::reset(game, emit))
 }
 
-fn setup(game: Res<crate::Game>, mut interaction_state: ResMut<InteractionState>) {
+fn setup(game: Res<crate::resources::Game>, mut interaction_state: ResMut<InteractionState>) {
     *interaction_state = InteractionState::from_game(&game.state);
 }

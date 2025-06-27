@@ -1,37 +1,34 @@
-use crate::{
-    AttackRangeIndicator, CaptureBar, CaptureBarBit, CaptureState, Carrier, CarrierSlot,
-    DamageHundredsDigit, DamageIndicator, DamageOnesDigit, DamageTensDigit, DeployEmblem, Deployed,
-    Game, Health, HealthOnesDigit, HealthTensDigit, InAttackRange, InputEvent, InputLayer, Moved,
-    Owner, Prop, SpriteSheet, Theme, Tile, TileHighlight, Unit, UnitHighlight, UnitMovePreview,
-    UnitMovePreviewProp,
-};
+use crate::{AppState, components::*, resources::*};
 use bevy::{asset::RenderAssetUsages, prelude::*};
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(
-            Update,
-            (
-                unit_deployed_emblem_system,
-                unit_moved_system,
-                unit_highlight_system,
-                tile_owner_system,
-                tile_highlight_system,
-                capture_bar_bit_system,
-                health_number_system,
-                damage_number_system,
-                carrier_slot_system,
-                cursor_system,
-                tile_attack_range_system,
-                unit_move_preview_added_system,
-                unit_move_preview_cleanup_system,
-            ),
-        );
+        app.add_systems(Startup, setup)
+            .add_systems(
+                Update,
+                (
+                    unit_deployed_emblem_system,
+                    unit_moved_system,
+                    unit_highlight_system,
+                    tile_owner_system,
+                    tile_highlight_system,
+                    capture_bar_bit_system,
+                    health_number_system,
+                    damage_number_system,
+                    carrier_slot_system,
+                    cursor_system,
+                    tile_attack_range_system,
+                    unit_move_preview_added_system,
+                    unit_move_preview_cleanup_system,
+                )
+                    .run_if(in_state(AppState::InGame)),
+            )
+            .add_systems(OnEnter(AppState::InGame), on_enter_game);
     }
 }
 
-fn setup(
+fn on_enter_game(
     mut commands: Commands,
     game: Res<Game>,
     theme: Res<Theme>,
@@ -91,6 +88,7 @@ fn setup(
         }
     }
 }
+fn setup() {}
 
 #[derive(Component)]
 struct HexCursor;

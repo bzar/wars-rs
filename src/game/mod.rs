@@ -7,11 +7,6 @@ mod game;
 mod map;
 mod tile;
 mod unit;
-pub use self::action::*;
-pub use self::game::*;
-pub use self::map::*;
-pub use self::tile::*;
-pub use self::unit::*;
 pub use model::UnitType;
 
 pub type UnitId = usize;
@@ -23,20 +18,24 @@ pub type Health = u32;
 pub type Credits = u32;
 pub type CapturePoints = u32;
 
-#[derive(PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq)]
 pub enum GameState {
     Pregame = 0,
     InProgress,
     Finished,
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Tiles(HashMap<TileId, Tile>);
+#[derive(Serialize, Deserialize)]
 pub struct Units(HashMap<UnitId, Unit>);
+#[derive(Serialize, Deserialize)]
 pub struct Players(Vec<Player>);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Position(pub i32, pub i32);
 
+#[derive(Serialize, Deserialize)]
 pub struct Game {
     pub state: GameState,
     pub units: Units,
@@ -48,7 +47,7 @@ pub struct Game {
     pub next_unit_id: UnitId,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Player {
     pub user_id: auth::UserId,
     pub number: PlayerNumber,
@@ -57,7 +56,7 @@ pub struct Player {
     pub alive: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Tile {
     pub terrain: model::Terrain,
     pub terrain_subtype_id: TerrainSubtypeId,
@@ -68,7 +67,7 @@ pub struct Tile {
     pub y: i32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Unit {
     pub unit_type: model::UnitType,
     pub health: Health,
@@ -86,7 +85,21 @@ pub struct Map {
     pub funds: u32,
 }
 
-#[derive(thiserror::Error, Debug, PartialEq)]
+#[derive(Serialize, Deserialize)]
+pub enum Action {
+    StartGame,
+    EndTurn,
+    Surrender,
+    Build(Position, UnitType),
+    MoveAndWait(UnitId, Vec<Position>),
+    MoveAndAttack(UnitId, Vec<Position>, UnitId),
+    MoveAndCapture(UnitId, Vec<Position>),
+    MoveAndDeploy(UnitId, Vec<Position>),
+    Undeploy(UnitId),
+    MoveAndLoadInto(UnitId, Vec<Position>),
+    MoveAndUnload(UnitId, Vec<Position>, UnitId, Position),
+}
+#[derive(Serialize, Deserialize, thiserror::Error, Debug, PartialEq)]
 pub enum ActionError {
     #[error("Internal error")]
     InternalError,
@@ -142,7 +155,7 @@ pub enum GameUpdateError {
 pub type GameUpdateResult<T> = Result<T, GameUpdateError>;
 pub type ActionResult<T> = Result<T, ActionError>;
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub enum Event {
     StartTurn(PlayerNumber),
     EndTurn(PlayerNumber),

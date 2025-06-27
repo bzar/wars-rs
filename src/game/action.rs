@@ -1,6 +1,26 @@
 use crate::game::*;
 use crate::model::*;
 
+pub fn perform(game: &mut Game, action: Action, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
+    match action {
+        Action::StartGame => start(game, emit),
+        Action::EndTurn => end_turn(game, emit),
+        Action::Surrender => surrender(game, emit),
+        Action::Build(position, build_type) => build(game, position, build_type, emit),
+        Action::MoveAndWait(unit_id, path) => move_and_wait(game, unit_id, &path, emit),
+        Action::MoveAndAttack(unit_id, path, target_id) => {
+            move_and_attack(game, unit_id, &path, target_id, emit)
+        }
+        Action::MoveAndCapture(unit_id, path) => move_and_capture(game, unit_id, &path, emit),
+        Action::MoveAndDeploy(unit_id, path) => move_and_deploy(game, unit_id, &path, emit),
+        Action::Undeploy(unit_id) => undeploy(game, unit_id, emit),
+        Action::MoveAndLoadInto(unit_id, path) => move_and_load_into(game, unit_id, &path, emit),
+        Action::MoveAndUnload(carrier_id, path, carried_id, unload_position) => {
+            move_and_unload(game, carrier_id, &path, carried_id, unload_position, emit)
+        }
+    }
+}
+
 pub fn start(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     game.set_state(GameState::InProgress)
         .map_err(|_| ActionError::GameAlreadyStarted)?;

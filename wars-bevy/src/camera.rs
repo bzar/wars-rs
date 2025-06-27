@@ -1,10 +1,15 @@
-use crate::{Game, Theme};
+use crate::{
+    AppState,
+    resources::{Game, Theme},
+};
 use bevy::prelude::*;
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, add_camera)
-            .add_systems(Update, map_movement_input_system);
+        app.add_systems(Startup, add_camera).add_systems(
+            Update,
+            map_movement_input_system.run_if(in_state(AppState::InGame)),
+        );
     }
 }
 

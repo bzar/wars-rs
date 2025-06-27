@@ -1,10 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{
-    Action, ActionMenu, BuildItem, BuildMenu, DisabledButton, EndTurnButton, Funds, Game,
-    InTurnPlayer, InputEvent, InputLayer, MenuBar, PlayerColored, SpriteSheet, Theme, UnloadMenu,
-    UnloadMenuItem, VisibleActionButtons,
-};
+use crate::{AppState, components::*, resources::*};
 use bevy::prelude::*;
 
 pub struct UIPlugin;
@@ -24,7 +20,8 @@ impl Plugin for UIPlugin {
                 unload_menu_item_button_system,
                 input_layer_system,
                 player_colored_ui_system,
-            ),
+            )
+                .run_if(in_state(AppState::InGame)),
         );
     }
 }

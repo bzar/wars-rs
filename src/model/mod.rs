@@ -2,7 +2,7 @@ mod model;
 pub use self::model::*;
 use enum_iterator::Sequence;
 
-#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord, Sequence)]
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord, Sequence)]
 pub enum UnitType {
     Infantry = 0,
     ATInfantry,
@@ -76,7 +76,7 @@ pub enum Weapon {
     CruiserArtillery,
     HeavyMachinegun,
 }
-#[derive(PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord)]
+#[derive(Serialize, Deserialize, PartialEq, Copy, Clone, Debug, PartialOrd, Eq, Ord)]
 pub enum Terrain {
     Road = 0,
     Plains,
