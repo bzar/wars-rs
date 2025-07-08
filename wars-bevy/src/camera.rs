@@ -1,20 +1,29 @@
 use crate::{
-    AppState,
     resources::{Game, Theme},
+    AppState,
 };
 use bevy::prelude::*;
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, add_camera).add_systems(
-            Update,
-            map_movement_input_system.run_if(in_state(AppState::InGame)),
-        );
+        app.add_systems(Startup, add_camera)
+            .add_systems(
+                Update,
+                map_movement_input_system.run_if(in_state(AppState::InGame)),
+            )
+            .add_systems(OnEnter(AppState::InGame), on_enter_game);
     }
 }
 
-fn add_camera(mut commands: Commands, game: Res<Game>, theme: Res<Theme>) {
-    let camera_transform = if let Some((min_x, min_y, max_x, max_y)) = game.state.tiles.rect() {
+fn on_enter_game(
+    game: Res<Game>,
+    theme: Res<Theme>,
+    mut camera_transform: Single<&mut Transform, With<Camera>>,
+) {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+    *(camera_transform.as_mut()) = if let Some((min_x, min_y, max_x, max_y)) = game.tiles.rect() {
         let center_x = (max_x - min_x) / 2;
         let center_y = (max_y - min_y) / 2;
         let (cx, cy, _) = theme.map_hex_center(center_x, center_y);
@@ -22,7 +31,9 @@ fn add_camera(mut commands: Commands, game: Res<Game>, theme: Res<Theme>) {
     } else {
         Transform::default()
     };
-    commands.spawn((Camera2d, camera_transform, Msaa::Off));
+}
+fn add_camera(mut commands: Commands) {
+    commands.spawn((Camera2d, Msaa::Off));
 }
 
 fn map_movement_input_system(

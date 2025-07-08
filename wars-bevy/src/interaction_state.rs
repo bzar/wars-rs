@@ -6,14 +6,17 @@ use wars::{
     model::UnitClass,
 };
 
-use crate::{components::Action, components::InputEvent};
+use crate::{
+    components::{Action, InputEvent},
+    AppState,
+};
 
 pub struct InteractionStatePlugin;
 
 impl Plugin for InteractionStatePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(InteractionState::None)
-            .add_systems(Startup, setup);
+            .add_systems(OnEnter(AppState::LoadGame), on_enter_game);
     }
 }
 
@@ -605,6 +608,12 @@ fn select_unit_type_to_build(
     Ok(InteractionState::reset(game, emit))
 }
 
-fn setup(game: Res<crate::resources::Game>, mut interaction_state: ResMut<InteractionState>) {
-    *interaction_state = InteractionState::from_game(&game.state);
+fn on_enter_game(
+    game: Res<crate::resources::Game>,
+    mut interaction_state: ResMut<InteractionState>,
+) {
+    let crate::resources::Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+    *interaction_state = InteractionState::from_game(game);
 }

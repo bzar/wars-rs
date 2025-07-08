@@ -8,8 +8,14 @@ pub type GameId = u32;
 
 #[derive(FromRow)]
 pub struct Game {
-    id: GameId,
-    data: String,
+    pub id: GameId,
+    pub data: String,
+}
+
+pub struct GameEvent {
+    pub game_id: GameId,
+    pub index: usize,
+    pub data: String
 }
 
 pub async fn new_database_pool(connection_string: &str) -> anyhow::Result<DatabasePool> {

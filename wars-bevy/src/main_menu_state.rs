@@ -1,8 +1,9 @@
 use crate::{
-    AppState,
     resources::{Game, Player},
+    AppState,
 };
 use bevy::prelude::*;
+use include_dir::{include_dir, File};
 
 pub struct MainMenuStatePlugin;
 
@@ -30,46 +31,50 @@ fn main_menu_system(
     mut game: ResMut<Game>,
     mut player_1_ai: Local<bool>,
     mut player_2_ai: Local<bool>,
-    mut map_name: Local<String>,
+    mut map_index: Local<usize>,
 ) {
+    let maps: Vec<wars::game::Map> = include_dir!("$CARGO_MANIFEST_DIR/../data/maps")
+        .entries()
+        .into_iter()
+        .filter_map(|e| {
+            e.as_file()
+                .and_then(File::contents_utf8)
+                .and_then(|content| wars::game::Map::from_json(content).ok())
+        })
+        .collect();
+
     egui::CentralPanel::default().show(contexts.ctx_mut(), |ui| {
         ui.vertical_centered(|ui| {
-            let mut selected_map_name = if map_name.is_empty() {
-                "My awesome map"
-            } else {
-                &map_name
-            };
             egui::ComboBox::from_label("Map")
-                .selected_text(selected_map_name)
+                .selected_text(&maps[*map_index].name)
                 .show_ui(ui, |ui| {
-                    ui.selectable_value(
-                        &mut selected_map_name,
-                        "my_awesome_map.json",
-                        "My awesome map",
-                    );
-                    ui.selectable_value(&mut selected_map_name, "third_party.json", "Third party");
-                    ui.selectable_value(&mut selected_map_name, "hexed.json", "Hexed");
+                    for (i, map) in maps.iter().enumerate() {
+                        ui.selectable_value(&mut *map_index, i, &map.name);
+                    }
                 });
-            if *map_name != selected_map_name {
-                *map_name = selected_map_name.to_owned();
-            }
 
             ui.checkbox(&mut player_1_ai, "Player 1 AI");
             ui.checkbox(&mut player_2_ai, "Player 2 AI");
 
             let player_or_bot = |is_ai| {
-                if is_ai { Player::Bot } else { Player::Human }
+                if is_ai {
+                    Player::Bot
+                } else {
+                    Player::Human
+                }
             };
 
             if ui.button("Start game").clicked() {
-                game.players = [
-                    (1, player_or_bot(*player_1_ai)),
-                    (2, player_or_bot(*player_2_ai)),
-                ]
-                .into_iter()
-                .collect();
+                *game = Game::PreGame(
+                    maps[*map_index].clone(),
+                    [
+                        (1, player_or_bot(*player_1_ai)),
+                        (2, player_or_bot(*player_2_ai)),
+                    ]
+                    .into(),
+                );
 
-                next_state.set(AppState::InGame);
+                next_state.set(AppState::LoadGame);
             }
         });
     });

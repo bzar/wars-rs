@@ -1,4 +1,4 @@
-use crate::{AppState, components::*, resources::*};
+use crate::{components::*, resources::*, AppState};
 use bevy::{asset::RenderAssetUsages, prelude::*};
 
 pub struct MapPlugin;
@@ -34,7 +34,10 @@ fn on_enter_game(
     theme: Res<Theme>,
     sprite_sheet: Res<SpriteSheet>,
 ) {
-    for (tile_id, tile) in game.state.tiles.iter_with_ids() {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+    for (tile_id, tile) in game.tiles.iter_with_ids() {
         if let Some(theme_tile) = theme.tile(tile) {
             let (tx, ty, tz) = theme.map_hex_center(tile.x, tile.y);
             let pos = Vec2::new(tx as f32, (ty - theme_tile.offset) as f32);
@@ -79,7 +82,7 @@ fn on_enter_game(
             }
             if let Some(unit_id) = tile.unit {
                 let (ox, oy) = theme.hex_sprite_center_offset();
-                let unit = game.state.units.get_ref(&unit_id).unwrap();
+                let unit = game.units.get_ref(&unit_id).unwrap();
                 commands.spawn((
                     unit_bundle(unit_id, unit, &theme, &sprite_sheet),
                     Transform::from_xyz(pos.x + ox as f32, pos.y + oy as f32, tz as f32 + 1.5),
@@ -102,11 +105,15 @@ fn cursor_system(
     mut cursors: Query<&mut Transform, With<HexCursor>>,
     mut events: EventReader<InputEvent>,
 ) {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+
     if let Ok(mut cursor) = cursors.single_mut() {
         for event in events.read() {
             match event {
                 InputEvent::MapHover(tile_id) => {
-                    let Some(tile) = game.state.tiles.get(*tile_id) else {
+                    let Some(tile) = game.tiles.get(*tile_id) else {
                         return;
                     };
                     let (x, y, z) = theme.map_hex_center(tile.x, tile.y);
@@ -213,10 +220,14 @@ fn unit_move_preview_added_system(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+
     let Some(player_color): Option<Color> = theme
         .spec
         .player_colors
-        .get(game.state.in_turn_number().unwrap_or(0) as usize)
+        .get(game.in_turn_number().unwrap_or(0) as usize)
         .map(Into::into)
     else {
         return;
@@ -225,7 +236,7 @@ fn unit_move_preview_added_system(
         if path.len() > 1 {
             let waypoints = path
                 .into_iter()
-                .map(|pos| game.state.tiles.get_at(&pos).expect("No such tile"))
+                .map(|pos| game.tiles.get_at(&pos).expect("No such tile"))
                 .map(|(_tile_id, tile)| theme.unit_position(&tile));
 
             for translation in waypoints {
@@ -256,9 +267,13 @@ fn tile_owner_system(
     changed_owners: Query<&Owner, (With<Tile>, Changed<Owner>)>,
     mut props: Query<(&Prop, &ChildOf, &mut Sprite)>,
 ) {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game");
+    };
+
     for (Prop(tile_id), ChildOf(tile), mut sprite) in props.iter_mut() {
         if let Ok(Owner(_owner)) = changed_owners.get(*tile) {
-            let tile = game.state.tiles.get(*tile_id).unwrap();
+            let tile = game.tiles.get(*tile_id).unwrap();
             let theme_tile = theme.tile(&tile).unwrap();
             if let Some(prop_index) = theme_tile.prop_index {
                 sprite.texture_atlas.as_mut().map(|a| a.index = prop_index);

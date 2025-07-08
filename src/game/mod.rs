@@ -78,6 +78,7 @@ pub struct Unit {
     pub capturing: bool,
 }
 
+#[derive(Clone)]
 pub struct Map {
     pub name: String,
     pub units: HashMap<UnitId, Unit>,

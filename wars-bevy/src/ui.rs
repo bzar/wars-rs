@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{AppState, components::*, resources::*};
+use crate::{components::*, resources::*, AppState};
 use bevy::prelude::*;
 
 pub struct UIPlugin;
@@ -28,7 +28,6 @@ impl Plugin for UIPlugin {
 
 fn setup(
     mut commands: Commands,
-    game: Res<Game>,
     theme: Res<Theme>,
     sprite_sheet: Res<SpriteSheet>,
     asset_server: Res<AssetServer>,
@@ -147,7 +146,7 @@ fn setup(
         Visibility::Hidden,
     ));
 
-    let player_number = game.state.in_turn_number();
+    let player_number = None;
     let mut unit_types = enum_iterator::all::<wars::model::UnitType>().collect::<Vec<_>>();
     unit_types.sort_by_key(|t| wars::model::unit_type(*t).price);
     for unit_type in unit_types {
@@ -205,16 +204,15 @@ fn button_bundle(text: &str, icon: Handle<Image>) -> impl Bundle {
             ..default()
         },
         children![
-            (
-                /*Text::new(text),
-                TextFont {
-                    //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
-                    font_size: 24.0,
-                    ..default()
-                },
-                TextColor(Color::BLACK),*/
-                ImageNode::new(icon)
-            )
+            // (
+            /*Text::new(text),
+            TextFont {
+                //font: asset_server.load("fonts/FiraSans-Bold.ttf"),
+                font_size: 24.0,
+                ..default()
+            },
+            TextColor(Color::BLACK),*/
+            ImageNode::new(icon) // )
         ],
     )
 }
@@ -241,6 +239,9 @@ fn unload_menu_system(
     theme: Res<Theme>,
     mut unload_menus: Query<(Entity, &UnloadMenu, &mut Visibility), Changed<UnloadMenu>>,
 ) {
+    let Game::InGame(game, ..) = game.as_ref() else {
+        panic!("Not in game")
+    };
     let Ok((entity_id, UnloadMenu(unit_ids), mut visibility)) = unload_menus.single_mut() else {
         return;
     };
@@ -256,7 +257,7 @@ fn unload_menu_system(
     entity.despawn_related::<Children>();
 
     for unit_id in unit_ids {
-        let unit = game.state.units.get_ref(unit_id).unwrap();
+        let unit = game.units.get_ref(unit_id).unwrap();
         commands.spawn((
             ChildOf(entity_id),
             Button,

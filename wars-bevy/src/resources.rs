@@ -2,22 +2,24 @@ use bevy::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
 use wars::game::PlayerNumber;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum Player {
     Human,
     Bot,
 }
 #[derive(Resource)]
-pub struct Game {
-    pub state: wars::game::Game,
-    pub players: HashMap<PlayerNumber, Player>,
+pub enum Game {
+    None,
+    PreGame(wars::game::Map, HashMap<PlayerNumber, Player>),
+    InGame(wars::game::Game, HashMap<PlayerNumber, Player>),
 }
 
 impl Game {
     pub fn in_turn(&self) -> Option<&Player> {
-        self.state
-            .in_turn_number()
-            .and_then(|n| self.players.get(&n))
+        let Game::InGame(state, players) = self else {
+            return None;
+        };
+        state.in_turn_number().and_then(|n| players.get(&n))
     }
 }
 

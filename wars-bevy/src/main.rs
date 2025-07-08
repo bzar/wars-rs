@@ -16,6 +16,7 @@ mod ui;
 enum AppState {
     #[default]
     MainMenu,
+    LoadGame,
     InGame,
 }
 fn main() {
