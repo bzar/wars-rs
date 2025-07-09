@@ -155,16 +155,15 @@ impl Players {
     }
 }
 impl Game {
-    pub fn new(map: Map, players: &[auth::UserId]) -> Game {
+    pub fn new(map: Map, players: &[(PlayerNumber, auth::UserId)]) -> Game {
         let &max_unit_id = { map.units.iter().map(|(id, _)| id).max().unwrap_or(&0) };
 
         let players = Players(
             players
                 .iter()
-                .enumerate()
-                .map(|(number, &uid)| Player {
-                    user_id: uid,
-                    number: number as u32 + 1,
+                .map(|(number, uid)| Player {
+                    user_id: *uid,
+                    number: *number,
                     funds: map.funds,
                     score: 0,
                     alive: true,
@@ -172,10 +171,30 @@ impl Game {
                 .collect(),
         );
 
+        let player_numbers: HashSet<_> = players.iter().map(|p| p.number).collect();
+        let units = map
+            .units
+            .into_iter()
+            .map(|(id, u)| match u.owner {
+                None => (id, u),
+                Some(pn) if player_numbers.contains(&pn) => (id, u),
+                _ => (id, Unit { owner: None, ..u }),
+            })
+            .collect();
+        let tiles = map
+            .tiles
+            .into_iter()
+            .map(|(id, u)| match u.owner {
+                None => (id, u),
+                Some(pn) if player_numbers.contains(&pn) => (id, u),
+                _ => (id, Tile { owner: None, ..u }),
+            })
+            .collect();
+
         Game {
             state: GameState::Pregame,
-            units: Units(map.units),
-            tiles: Tiles(map.tiles),
+            units: Units(units),
+            tiles: Tiles(tiles),
             players,
             in_turn_index: 0,
             round_count: 0,

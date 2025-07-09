@@ -76,7 +76,7 @@ fn on_enter_load_game(
     let Game::PreGame(map, players) = game.as_ref() else {
         panic!("Entered game without pregame");
     };
-    let mut player_numbers = players.keys().copied().collect::<Vec<_>>();
+    let mut player_numbers = players.keys().map(|&pn| (pn, 0)).collect::<Vec<_>>();
     player_numbers.sort();
     let mut state = wars::game::Game::new(map.clone(), &player_numbers);
 
