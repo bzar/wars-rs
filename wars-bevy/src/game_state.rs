@@ -540,6 +540,9 @@ fn interaction_event_system(
                     if let Some(position) = window.cursor_position() {
                         node.left = Val::Px(position.x);
                         node.top = Val::Px(position.y);
+                    } else {
+                        node.left = Val::Percent(50.0);
+                        node.top = Val::Percent(50.0);
                     }
                 });
                 for (_, mut highlight) in tile_highlights.iter_mut() {
