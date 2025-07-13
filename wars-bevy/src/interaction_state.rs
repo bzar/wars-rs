@@ -71,16 +71,16 @@ pub enum InteractionEvent {
     SelectDestination(HashSet<Position>),
     SelectedDestination(UnitId, Vec<Position>),
     CancelSelectDestination,
-    SelectAction(HashSet<Action>, HashSet<TileId>),
+    SelectAction(Position, HashSet<Action>, HashSet<TileId>),
     SelectedAction(Action),
     CancelSelectAction,
     SelectAttackTarget(HashMap<UnitId, wars::game::Health>, HashSet<TileId>),
     CancelSelectAttackTarget,
-    SelectUnloadUnit(Vec<UnitId>),
+    SelectUnloadUnit(Position, Vec<UnitId>),
     CancelSelectUnloadUnit,
     SelectUnloadDestination(HashSet<Position>),
     CancelSelectUnloadDestination,
-    SelectUnitToBuild(HashSet<UnitClass>),
+    SelectUnitToBuild(Position, HashSet<UnitClass>),
     CancelSelectUnitToBuild,
 }
 
@@ -165,6 +165,10 @@ impl InteractionState {
                 unload_options,
                 emit,
             )?,
+            InteractionState::SelectUnitToUnload { .. } => {
+                emit(InteractionEvent::CancelSelectUnloadUnit, game);
+                InteractionState::reset(game, emit)
+            }
             InteractionState::SelectUnitToBuild { .. } => {
                 emit(InteractionEvent::CancelSelectUnitToBuild, game);
                 InteractionState::reset(game, emit)
@@ -174,7 +178,6 @@ impl InteractionState {
                 InteractionState::reset(game, emit)
             }
             InteractionState::None => return Err(Error::InvalidState),
-            other @ _ => other,
         };
         Ok(())
     }
@@ -342,6 +345,7 @@ fn select_unit_or_base(
     } else if tiles.contains(&tile_id) {
         emit(
             InteractionEvent::SelectUnitToBuild(
+                tile.position(),
                 tile.terrain_data().build_classes.iter().copied().collect(),
             ),
             game,
@@ -429,7 +433,7 @@ fn select_destination(
     }
 
     emit(
-        InteractionEvent::SelectAction(action_options.clone(), tiles_in_range.clone()),
+        InteractionEvent::SelectAction(position, action_options.clone(), tiles_in_range.clone()),
         game,
     );
     Ok(InteractionState::SelectAction {
@@ -483,12 +487,8 @@ fn select_unload_destination(
         .ok_or(wars::game::ActionError::TileNotFound)?;
     let position = tile.position();
     if !unload_options.contains(&position) {
-        return Ok(InteractionState::SelectUnloadDestination {
-            carrier_id,
-            path,
-            unit_id,
-            unload_options,
-        });
+        emit(InteractionEvent::CancelSelectUnloadDestination, game);
+        return Ok(InteractionState::reset(game, emit));
     }
     emit(
         InteractionEvent::MoveAndUnloadUnitTo(carrier_id, path, unit_id, position),
@@ -551,8 +551,9 @@ fn select_action(
                 .units
                 .get_ref(&unit_id)
                 .ok_or(wars::game::ActionError::UnitNotFound)?;
+            let position = path.last().ok_or(wars::game::ActionError::InvalidPath)?;
             emit(
-                InteractionEvent::SelectUnloadUnit(unit.carried.clone()),
+                InteractionEvent::SelectUnloadUnit(*position, unit.carried.clone()),
                 game,
             );
 
@@ -576,6 +577,7 @@ fn select_unit_to_unload(
     mut emit: impl FnMut(InteractionEvent, &mut Game),
 ) -> InteractionResult<InteractionState> {
     let position = path.last().ok_or(wars::game::ActionError::InvalidPath)?;
+    info!("select_unit_to_unload({carrier_id}, {path:?}, {unit_id})");
     let unload_options = game
         .unit_unload_options(carrier_id, position, unit_id)
         .ok_or(wars::game::ActionError::CannotUnload)?;

@@ -121,11 +121,8 @@ pub struct EndTurnButton;
 #[derive(Component)]
 pub struct MenuBar;
 
-#[derive(Component, Default, Deref, DerefMut)]
-pub struct UnloadMenu(pub Vec<wars::game::UnitId>);
-
-#[derive(Component, Default)]
-pub struct UnloadMenuItem(pub wars::game::UnitId);
+#[derive(Component)]
+pub struct UnloadMenu;
 
 #[derive(Component)]
 pub struct Funds(pub u32);
@@ -135,7 +132,8 @@ impl Funds {
         Self(self.0.saturating_sub(amount))
     }
 }
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash)]
+
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, enum_iterator::Sequence)]
 pub enum Action {
     Wait,
     Attack,
@@ -169,16 +167,10 @@ pub enum BotEvent {
 pub struct ActionMenu;
 
 #[derive(Component)]
-pub struct BuildMenu {
-    pub price_limit: u32,
-    pub unit_classes: HashSet<wars::model::UnitClass>,
-}
+pub struct BuildMenu;
 
 #[derive(Component)]
 pub struct DisabledButton;
-
-#[derive(Component)]
-pub struct BuildItem(pub wars::model::UnitType);
 
 #[derive(Component)]
 pub struct PlayerColored;

@@ -1,5 +1,8 @@
-use crate::{components::*, resources::*, AppState};
+use std::{collections::HashSet, f32::consts::TAU};
+
+use crate::{animation, components::*, resources::*, AppState};
 use bevy::{asset::RenderAssetUsages, prelude::*};
+use wars::game::PlayerNumber;
 
 pub struct MapPlugin;
 impl Plugin for MapPlugin {
@@ -21,6 +24,9 @@ impl Plugin for MapPlugin {
                     tile_attack_range_system,
                     unit_move_preview_added_system,
                     unit_move_preview_cleanup_system,
+                    action_menu_system,
+                    build_menu_system,
+                    unload_menu_system,
                 )
                     .run_if(in_state(AppState::InGame)),
             )
@@ -662,5 +668,361 @@ fn prop_bundle(
     (
         Prop(tile_id),
         sprite_sheet.sprite(theme_tile.prop_index.unwrap()),
+    )
+}
+
+fn action_menu_system(
+    mut commands: Commands,
+    visible_action_menu: Res<VisibleActionMenu>,
+    action_menus: Query<Entity, With<ActionMenu>>,
+    theme: Res<Theme>,
+    asset_server: Res<AssetServer>,
+) {
+    if let VisibleActionMenu(Some((position, ref actions))) = *visible_action_menu {
+        if action_menus.is_empty() {
+            let wars::game::Position(x, y) = position;
+            let (x, y, z) = theme.hex_sprite_center(x, y);
+            spawn_action_menu(
+                commands,
+                &actions,
+                Vec3::new(x as f32, y as f32, z as f32 + 200.0),
+                asset_server,
+            );
+        }
+    } else if !action_menus.is_empty() {
+        for menu in action_menus.iter() {
+            commands.entity(menu).despawn();
+        }
+    }
+}
+pub fn spawn_action_menu(
+    mut commands: Commands,
+    actions: &HashSet<Action>,
+    position: Vec3,
+    asset_server: Res<AssetServer>,
+) {
+    let menu = commands
+        .spawn((
+            ActionMenu,
+            Sprite::from_color(Color::WHITE.with_alpha(0.0), Vec2::ZERO),
+            Transform::from_translation(position),
+        ))
+        .id();
+    let mut i = 0;
+    for action in enum_iterator::all::<Action>() {
+        if actions.contains(&action) {
+            let angle = TAU * i as f32 / actions.len() as f32;
+            let position = Transform::from_rotation(Quat::from_rotation_z(angle))
+                .transform_point(Vec3::Y * 64.0);
+            let action = action.clone();
+            commands
+                .spawn((
+                    action_menu_button_bundle(&action, position, menu, &asset_server),
+                    Pickable::default(),
+                ))
+                .observe(
+                    move |_trigger: Trigger<Pointer<Click>>,
+                          mut events: EventWriter<InputEvent>| {
+                        info!("triggered!");
+                        events.write(InputEvent::Action(action));
+                    },
+                );
+
+            i += 1;
+        }
+    }
+}
+
+fn action_menu_button_bundle(
+    action: &Action,
+    position: Vec3,
+    menu: Entity,
+    asset_server: &AssetServer,
+) -> impl Bundle {
+    let icon = match action {
+        Action::Wait => "gui/action-wait.png",
+        Action::Attack => "gui/action-attack.png",
+        Action::Capture => "gui/action-capture.png",
+        Action::Deploy => "gui/action-deploy.png",
+        Action::Undeploy => "gui/action-undeploy.png",
+        Action::Load => "gui/action-load.png",
+        Action::Unload => "gui/action-unload.png",
+        Action::Cancel => "gui/action-cancel.png",
+    };
+
+    (
+        Sprite {
+            image: asset_server.load(icon),
+            color: Color::WHITE.with_alpha(0.0),
+            ..Default::default()
+        },
+        Transform::from_translation(position),
+        ChildOf(menu),
+        animation::SpriteAnimation::from(animation::parallel([
+            animation::translate(
+                Vec3::new(0.0, 0.0, position.z),
+                position,
+                0.2,
+                EaseFunction::QuadraticOut,
+            ),
+            animation::scale(0.0, 1.0, 0.2, EaseFunction::QuadraticOut),
+            animation::fade(0.0, 0.9, 0.2),
+        ])),
+    )
+}
+
+fn build_menu_system(
+    mut commands: Commands,
+    visible_build_menu: Res<VisibleBuildMenu>,
+    build_menus: Query<Entity, With<BuildMenu>>,
+    theme: Res<Theme>,
+    sprite_sheet: Res<SpriteSheet>,
+) {
+    if let VisibleBuildMenu(Some((position, ref unit_classes, player_number, price_limit))) =
+        *visible_build_menu
+    {
+        if build_menus.is_empty() {
+            let wars::game::Position(x, y) = position;
+            let (x, y, z) = theme.hex_sprite_center(x, y);
+            spawn_build_menu(
+                commands,
+                &unit_classes,
+                player_number,
+                price_limit,
+                Vec3::new(x as f32, y as f32, z as f32 + 200.0),
+                &theme,
+                &sprite_sheet,
+            );
+        }
+    } else if !build_menus.is_empty() {
+        for menu in build_menus.iter() {
+            commands.entity(menu).despawn();
+        }
+    }
+}
+
+pub fn spawn_build_menu(
+    mut commands: Commands,
+    unit_classes: &HashSet<wars::model::UnitClass>,
+    player_number: Option<wars::game::PlayerNumber>,
+    price_limit: u32,
+    position: Vec3,
+    theme: &Theme,
+    sprite_sheet: &SpriteSheet,
+) {
+    let menu = commands
+        .spawn((
+            BuildMenu,
+            Sprite::from_color(Color::WHITE.with_alpha(0.0), Vec2::ZERO),
+            Transform::from_translation(position),
+        ))
+        .id();
+
+    let mut unit_types = enum_iterator::all::<wars::model::UnitType>()
+        .filter(|ut| {
+            let unit_type = wars::model::unit_type(*ut);
+            unit_classes.contains(&unit_type.unit_class)
+        })
+        .collect::<Vec<_>>();
+    unit_types.sort_by_key(|t| wars::model::unit_type(*t).price);
+
+    for (i, unit_type) in unit_types.iter().enumerate() {
+        let angle = TAU * i as f32 / unit_types.len() as f32;
+        let position = Transform::from_rotation(Quat::from_rotation_z(angle))
+            .transform_point(Vec3::Y * (32.0 + 12.0 * unit_types.len() as f32));
+        let unit_type = unit_type.clone();
+        let price = wars::model::unit_type(unit_type).price;
+        let enabled = price <= price_limit;
+        let mut item = commands.spawn((
+            build_menu_button_bundle(
+                &unit_type,
+                player_number,
+                position,
+                menu,
+                theme,
+                sprite_sheet,
+                price,
+                enabled,
+            ),
+            Pickable::default(),
+        ));
+
+        if enabled {
+            item.observe(
+                move |_trigger: Trigger<Pointer<Click>>, mut events: EventWriter<InputEvent>| {
+                    info!("triggered!");
+                    events.write(InputEvent::BuildUnit(unit_type));
+                },
+            );
+        }
+    }
+}
+
+fn build_menu_button_bundle(
+    unit_type: &wars::model::UnitType,
+    player_number: Option<PlayerNumber>,
+    position: Vec3,
+    menu: Entity,
+    theme: &Theme,
+    sprite_sheet: &SpriteSheet,
+    price: u32,
+    enabled: bool,
+) -> impl Bundle {
+    let color = if enabled {
+        Color::WHITE
+    } else {
+        Color::srgb(0.5, 0.5, 0.5)
+    };
+    let text_color = if enabled {
+        Color::WHITE
+    } else {
+        Color::srgb(0.8, 0.8, 0.8)
+    };
+    (
+        Sprite {
+            color: color.with_alpha(0.0),
+            ..sprite_sheet.sprite(theme.build_item.background_index)
+        },
+        Transform::from_translation(position).with_scale(Vec3::splat(0.0)),
+        ChildOf(menu),
+        animation::SpriteAnimation::from(animation::parallel([
+            animation::translate(
+                Vec3::new(0.0, 0.0, position.z),
+                position,
+                0.2,
+                EaseFunction::QuadraticOut,
+            ),
+            animation::scale(0.0, 1.0, 0.2, EaseFunction::QuadraticOut),
+            animation::fade(0.0, 0.9, 0.2),
+        ])),
+        children![
+            (
+                Sprite {
+                    color,
+                    ..sprite_sheet.sprite(theme.unit(*unit_type, player_number).unwrap().unit_index)
+                },
+                Transform::from_xyz(0.0, 0.0, 1.0)
+            ),
+            (
+                Text2d::new(format!("{price} cr")),
+                TextFont {
+                    font_size: 13.0,
+                    ..Default::default()
+                },
+                Transform::from_xyz(0.0, -20.0, 2.0),
+                TextColor(text_color)
+            ),
+            (
+                Sprite::from_color(Color::srgba(0.0, 0.0, 0.0, 0.8), Vec2::new(60.0, 14.0)),
+                Transform::from_xyz(0.0, -20.0, 1.5),
+            )
+        ],
+    )
+}
+fn unload_menu_system(
+    mut commands: Commands,
+    visible_unload_menu: Res<VisibleUnloadMenu>,
+    unload_menus: Query<Entity, With<UnloadMenu>>,
+    game: Res<Game>,
+    theme: Res<Theme>,
+    sprite_sheet: Res<SpriteSheet>,
+) {
+    if let VisibleUnloadMenu(Some((position, ref unit_ids))) = *visible_unload_menu {
+        if unload_menus.is_empty() {
+            let wars::game::Position(x, y) = position;
+            let (x, y, z) = theme.hex_sprite_center(x, y);
+            info!("Spawing unload menu at position {position:?} -> ({x}, {y}, {z})");
+            spawn_unload_menu(
+                commands,
+                &unit_ids,
+                Vec3::new(x as f32, y as f32, z as f32 + 200.0),
+                &game,
+                &theme,
+                &sprite_sheet,
+            );
+        }
+    } else if !unload_menus.is_empty() {
+        for menu in unload_menus.iter() {
+            commands.entity(menu).despawn();
+        }
+    }
+}
+
+pub fn spawn_unload_menu(
+    mut commands: Commands,
+    unit_ids: &Vec<wars::game::UnitId>,
+    position: Vec3,
+    game: &Game,
+    theme: &Theme,
+    sprite_sheet: &SpriteSheet,
+) {
+    let Game::InGame(game, _) = game else {
+        panic!("Not in game");
+    };
+    let menu = commands
+        .spawn((
+            UnloadMenu,
+            Sprite::from_color(Color::WHITE.with_alpha(0.0), Vec2::ZERO),
+            Transform::from_translation(position),
+        ))
+        .id();
+
+    for (i, &unit_id) in unit_ids.iter().enumerate() {
+        let angle = TAU * i as f32 / unit_ids.len() as f32;
+        let position = Transform::from_rotation(Quat::from_rotation_z(angle))
+            .transform_point(Vec3::Y * (32.0 + 12.0 * unit_ids.len() as f32));
+        let Some(unit) = game.units.get(unit_id) else {
+            panic!("Unknown unit in unload menu!");
+        };
+        let mut item = commands.spawn((
+            unload_menu_button_bundle(
+                &unit.unit_type,
+                unit.owner,
+                position,
+                menu,
+                theme,
+                sprite_sheet,
+            ),
+            Pickable::default(),
+        ));
+
+        item.observe(
+            move |_trigger: Trigger<Pointer<Click>>, mut events: EventWriter<InputEvent>| {
+                info!("triggered!");
+                events.write(InputEvent::UnloadUnit(unit_id));
+            },
+        );
+    }
+}
+
+fn unload_menu_button_bundle(
+    unit_type: &wars::model::UnitType,
+    player_number: Option<PlayerNumber>,
+    position: Vec3,
+    menu: Entity,
+    theme: &Theme,
+    sprite_sheet: &SpriteSheet,
+) -> impl Bundle {
+    (
+        Sprite {
+            color: Color::WHITE.with_alpha(0.0),
+            ..sprite_sheet.sprite(theme.build_item.background_index)
+        },
+        Transform::from_translation(position).with_scale(Vec3::splat(0.0)),
+        ChildOf(menu),
+        animation::SpriteAnimation::from(animation::parallel([
+            animation::translate(
+                Vec3::new(0.0, 0.0, position.z),
+                position,
+                0.2,
+                EaseFunction::QuadraticOut,
+            ),
+            animation::scale(0.0, 1.0, 0.2, EaseFunction::QuadraticOut),
+            animation::fade(0.0, 0.9, 0.2),
+        ])),
+        children![(
+            sprite_sheet.sprite(theme.unit(*unit_type, player_number).unwrap().unit_index),
+            Transform::from_xyz(0.0, 0.0, 1.0)
+        ),],
     )
 }

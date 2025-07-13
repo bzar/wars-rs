@@ -2,7 +2,7 @@ use crate::{
     resources::{Game, Theme},
     AppState,
 };
-use bevy::{input::touch::Touch, log::tracing::Instrument, prelude::*, reflect::Enum};
+use bevy::prelude::*;
 pub struct CameraPlugin;
 impl Plugin for CameraPlugin {
     fn build(&self, app: &mut App) {
@@ -73,12 +73,12 @@ fn map_movement_input_system(
         let start_midpoint = touch_1.start_position().midpoint(touch_2.start_position());
         let current_midpoint = touch_1.position().midpoint(touch_2.position());
         let midpoint_delta = current_midpoint - start_midpoint;
-        transform.translation =
-            *translation_0 + (midpoint_delta * Vec2::new(-1.0, 1.0)).extend(0.0);
+        transform.translation = *translation_0
+            + (midpoint_delta * projection2d.scale * Vec2::new(-1.0, 1.0)).extend(0.0);
 
         let start_distance = start_midpoint.distance(touch_1.start_position());
         let current_distance = current_midpoint.distance(touch_1.position());
-        // projection2d.scale = *scale_0 * start_distance / current_distance;
+        projection2d.scale = *scale_0 * start_distance / current_distance;
     } else {
         *touch_state = None;
     }

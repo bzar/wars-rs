@@ -10,6 +10,7 @@ pub enum SpriteAnimationState {
     Parallel(Vec<SpriteAnimation>),
     Position(f32, EasingCurve<Vec3>),
     Color(f32, ColorCurve<Color>),
+    Scale(f32, EasingCurve<Vec3>),
     Delay(f32),
     Despawn,
 }
@@ -33,14 +34,30 @@ impl From<SpriteAnimationState> for SpriteAnimation {
     }
 }
 
-fn sequence(parts: impl IntoIterator<Item = SpriteAnimationState>) -> SpriteAnimationState {
+pub fn sequence(parts: impl IntoIterator<Item = SpriteAnimationState>) -> SpriteAnimationState {
     SpriteAnimationState::Sequence(parts.into_iter().map(From::from).collect())
 }
-fn repeat(n: usize, state: SpriteAnimationState) -> SpriteAnimationState {
+pub fn parallel(parts: impl IntoIterator<Item = SpriteAnimationState>) -> SpriteAnimationState {
+    SpriteAnimationState::Parallel(parts.into_iter().map(From::from).collect())
+}
+pub fn repeat(n: usize, state: SpriteAnimationState) -> SpriteAnimationState {
     sequence([state].into_iter().cycle().take(n))
 }
-fn translate(p0: Vec3, p1: Vec3, t: f32, easing: EaseFunction) -> SpriteAnimationState {
+pub fn translate(p0: Vec3, p1: Vec3, t: f32, easing: EaseFunction) -> SpriteAnimationState {
     SpriteAnimationState::Position(t, EasingCurve::new(p0, p1, easing)).into()
+}
+pub fn scale(s0: f32, s1: f32, t: f32, easing: EaseFunction) -> SpriteAnimationState {
+    SpriteAnimationState::Scale(
+        t,
+        EasingCurve::new(Vec3::splat(s0), Vec3::splat(s1), easing),
+    )
+    .into()
+}
+pub fn fade(a0: f32, a1: f32, t: f32) -> SpriteAnimationState {
+    SpriteAnimationState::Color(
+        t,
+        ColorCurve::new([Color::WHITE.with_alpha(a0), Color::WHITE.with_alpha(a1)]).unwrap(),
+    )
 }
 impl SpriteAnimation {
     fn is_done(&self) -> bool {
@@ -48,6 +65,7 @@ impl SpriteAnimation {
             SpriteAnimationState::Sequence(ref parts) => parts.is_empty(),
             SpriteAnimationState::Parallel(ref parts) => parts.is_empty(),
             SpriteAnimationState::Position(duration, _) => self.time > duration,
+            SpriteAnimationState::Scale(duration, _) => self.time > duration,
             SpriteAnimationState::Color(duration, _) => self.time > duration,
             SpriteAnimationState::Delay(duration) => self.time > duration,
             SpriteAnimationState::Despawn => false,
@@ -84,6 +102,11 @@ impl SpriteAnimation {
             SpriteAnimationState::Position(duration, ref easing_curve) => {
                 if let Some(position) = easing_curve.sample(self.time / duration) {
                     transform.translation = position;
+                }
+            }
+            SpriteAnimationState::Scale(duration, ref easing_curve) => {
+                if let Some(position) = easing_curve.sample(self.time / duration) {
+                    transform.scale = position;
                 }
             }
             SpriteAnimationState::Color(duration, ref color_curve) => {

@@ -21,6 +21,9 @@ impl Plugin for GameStatePlugin {
             .insert_resource(VisibleActionButtons::default())
             .insert_resource(InputLayer::Game)
             .insert_resource(InTurnPlayer(None))
+            .insert_resource(VisibleActionMenu(None))
+            .insert_resource(VisibleBuildMenu(None))
+            .insert_resource(VisibleUnloadMenu(None))
             .add_event::<InputEvent>()
             .add_event::<GameEvent>()
             .add_event::<BotEvent>()
@@ -400,21 +403,23 @@ fn interaction_event_system(
     mut game_events: EventWriter<GameEvent>,
     mut interaction_state: ResMut<InteractionState>,
     mut game_res: ResMut<Game>,
-    mut visible_action_buttons: ResMut<VisibleActionButtons>,
+    menus: (
+        ResMut<VisibleActionMenu>,
+        ResMut<VisibleBuildMenu>,
+        ResMut<VisibleUnloadMenu>,
+    ),
     mut unit_highlights: Query<(&Unit, &mut UnitHighlight)>,
     mut tile_highlights: Query<(&Tile, &mut TileHighlight)>,
     unit_entities: Query<(&Unit, Entity)>,
     entities_with_move_previews: Query<Entity, With<UnitMovePreview>>,
     mut tile_in_attack_ranges: Query<(&Tile, &mut InAttackRange)>,
-    mut build_menus: Query<(&mut BuildMenu, &mut Visibility), Without<ActionMenu>>,
-    mut unload_menus: Query<&mut UnloadMenu>,
     mut damage_indicators: Query<(&Unit, &mut DamageIndicator)>,
     mut action_menus: Query<(&mut Node, &mut Visibility), (With<ActionMenu>, Without<BuildMenu>)>,
-    window: Single<&Window>,
 ) {
     let Game::InGame(game, players) = game_res.as_mut() else {
         return;
     };
+    let (mut visible_action_menu, mut visible_build_menu, mut visible_unload_menu) = menus;
 
     let mut enqueue_event = move |e| {
         game_events.write(GameEvent(e));
@@ -428,7 +433,6 @@ fn interaction_event_system(
                 });
             }
             InteractionEvent::MoveAndWait(unit_id, ref path) => {
-                visible_action_buttons.clear();
                 wars::game::action::move_and_wait(
                     game.deref_mut(),
                     unit_id,
@@ -438,7 +442,6 @@ fn interaction_event_system(
                 .expect("Could not move unit");
             }
             InteractionEvent::MoveAndAttack(unit_id, ref path, target_id) => {
-                visible_action_buttons.clear();
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
                 }
@@ -458,7 +461,6 @@ fn interaction_event_system(
                 .expect("Could not attack");
             }
             InteractionEvent::MoveAndCapture(unit_id, ref path) => {
-                visible_action_buttons.clear();
                 wars::game::action::move_and_capture(
                     game.deref_mut(),
                     unit_id,
@@ -468,7 +470,6 @@ fn interaction_event_system(
                 .expect("Could not capture tile");
             }
             InteractionEvent::MoveAndDeploy(unit_id, ref path) => {
-                visible_action_buttons.clear();
                 wars::game::action::move_and_deploy(
                     game.deref_mut(),
                     unit_id,
@@ -478,12 +479,10 @@ fn interaction_event_system(
                 .expect("Could not deploy unit");
             }
             InteractionEvent::Undeploy(unit_id) => {
-                visible_action_buttons.clear();
                 wars::game::action::undeploy(game.deref_mut(), unit_id, &mut enqueue_event)
                     .expect("Could not undeploy unit");
             }
             InteractionEvent::MoveAndLoadInto(unit_id, ref path) => {
-                visible_action_buttons.clear();
                 wars::game::action::move_and_load_into(
                     game.deref_mut(),
                     unit_id,
@@ -493,7 +492,6 @@ fn interaction_event_system(
                 .expect("Could not load into unit");
             }
             InteractionEvent::MoveAndUnloadUnitTo(carrier_id, ref path, unit_id, position) => {
-                visible_action_buttons.clear();
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }
@@ -508,7 +506,6 @@ fn interaction_event_system(
                 .expect("Could not unload carried unit");
             }
             InteractionEvent::SelectDestination(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
                     *highlight = if options.contains(&tile.position()) {
@@ -534,21 +531,11 @@ fn interaction_event_system(
                     *highlight = TileHighlight::Normal;
                 }
             }
-            InteractionEvent::SelectAction(ref options, ref tiles_in_range) => {
-                action_menus.iter_mut().for_each(|(mut node, mut v)| {
-                    *v = Visibility::Inherited;
-                    if let Some(position) = window.cursor_position() {
-                        node.left = Val::Px(position.x);
-                        node.top = Val::Px(position.y);
-                    } else {
-                        node.left = Val::Percent(50.0);
-                        node.top = Val::Percent(50.0);
-                    }
-                });
+            InteractionEvent::SelectAction(position, ref options, ref tiles_in_range) => {
+                *visible_action_menu = VisibleActionMenu(Some((position, options.clone())));
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }
-                *visible_action_buttons = VisibleActionButtons(options.clone());
                 for (Tile(tid), mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
                     *in_attack_range = InAttackRange(tiles_in_range.contains(tid))
                 }
@@ -560,9 +547,9 @@ fn interaction_event_system(
                 for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
                     *in_attack_range = InAttackRange(false);
                 }
+                *visible_action_menu = VisibleActionMenu(None);
             }
             InteractionEvent::SelectAttackTarget(ref options, ref tiles_in_range) => {
-                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
                 for (Unit(uid), mut highlight) in unit_highlights.iter_mut() {
                     *highlight = if options.contains_key(&uid) {
                         UnitHighlight::Target
@@ -579,14 +566,11 @@ fn interaction_event_system(
                     *in_attack_range = InAttackRange(tiles_in_range.contains(tid))
                 }
             }
-            InteractionEvent::SelectUnloadUnit(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
-                let mut menu = unload_menus.single_mut().unwrap();
-                *menu = UnloadMenu(options.clone());
+            InteractionEvent::SelectUnloadUnit(position, ref options) => {
+                *visible_unload_menu = VisibleUnloadMenu(Some((position, options.clone())));
             }
             InteractionEvent::SelectUnloadDestination(ref options) => {
-                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
-                unload_menus.single_mut().unwrap().clear();
+                *visible_unload_menu = VisibleUnloadMenu(None);
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
                     let tile = game.tiles.get(*tile_id).unwrap();
                     *highlight = if options.contains(&tile.position()) {
@@ -596,13 +580,13 @@ fn interaction_event_system(
                     };
                 }
             }
-            InteractionEvent::SelectUnitToBuild(ref unit_classes) => {
-                *visible_action_buttons = VisibleActionButtons([Action::Cancel].into());
-                let (mut build_menu, mut visibility) =
-                    build_menus.single_mut().expect("Build menu does not exist");
-                *visibility = Visibility::Inherited;
-                build_menu.price_limit = game.in_turn_player().unwrap().funds;
-                build_menu.unit_classes = unit_classes.clone();
+            InteractionEvent::SelectUnitToBuild(position, ref unit_classes) => {
+                *visible_build_menu = VisibleBuildMenu(Some((
+                    position,
+                    unit_classes.clone(),
+                    game.in_turn_number(),
+                    game.in_turn_player().map(|p| p.funds).unwrap_or(0),
+                )));
             }
             InteractionEvent::BuildUnit(tile_id, unit_type) => {
                 let tile = game.tiles.get(tile_id).expect("Tile does not exist");
@@ -613,25 +597,18 @@ fn interaction_event_system(
                     &mut enqueue_event,
                 )
                 .expect("Could not build unit");
-                visible_action_buttons.clear();
-                build_menus
-                    .iter_mut()
-                    .for_each(|(_, mut v)| *v = Visibility::Hidden);
+                *visible_build_menu = VisibleBuildMenu(None);
             }
             InteractionEvent::CancelSelectUnitToBuild => {
-                visible_action_buttons.clear();
-                build_menus
-                    .iter_mut()
-                    .for_each(|(_, mut v)| *v = Visibility::Hidden);
+                *visible_build_menu = VisibleBuildMenu(None);
             }
             InteractionEvent::CancelSelectAction => {
-                visible_action_buttons.clear();
                 for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
                     *in_attack_range = InAttackRange(false);
                 }
+                *visible_action_menu = VisibleActionMenu(None);
             }
             InteractionEvent::CancelSelectAttackTarget => {
-                visible_action_buttons.clear();
                 for (_, mut highlight) in unit_highlights.iter_mut() {
                     *highlight = UnitHighlight::Normal;
                 }
@@ -643,11 +620,9 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::CancelSelectUnloadUnit => {
-                visible_action_buttons.clear();
-                unload_menus.single_mut().unwrap().clear();
+                *visible_unload_menu = VisibleUnloadMenu(None);
             }
             InteractionEvent::CancelSelectUnloadDestination => {
-                visible_action_buttons.clear();
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }

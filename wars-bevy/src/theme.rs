@@ -68,6 +68,11 @@ pub struct Emblems {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct Ui {
+    pub build_item_background: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ThemeSpec {
     pub player_colors: Vec<Color>,
     pub sheet: Sheet,
@@ -82,6 +87,7 @@ pub struct ThemeSpec {
     pub numbers: Numbers,
     pub emblems: Emblems,
     pub masks: Masks,
+    pub ui: Ui,
 }
 
 pub type Index = usize;
@@ -116,6 +122,9 @@ pub struct ThemeCarrierSlot {
     pub full_index: Index,
     pub height: u32,
 }
+pub struct ThemeBuildItem {
+    pub background_index: Index,
+}
 pub struct Theme {
     pub spec: ThemeSpec,
     tiles: HashMap<(usize, usize, usize), ThemeTile>,
@@ -126,6 +135,7 @@ pub struct Theme {
     pub capture_bar: ThemeCaptureBar,
     pub carrier_slot: ThemeCarrierSlot,
     pub masks: ThemeMasks,
+    pub build_item: ThemeBuildItem,
 }
 
 impl From<ThemeSpec> for Theme {
@@ -218,6 +228,12 @@ impl From<ThemeSpec> for Theme {
         let masks = ThemeMasks {
             attack_hex_mask_index: label_indices.get(&spec.masks.attack_hex).copied().unwrap(),
         };
+        let build_item = ThemeBuildItem {
+            background_index: label_indices
+                .get(&spec.ui.build_item_background)
+                .copied()
+                .unwrap(),
+        };
         Self {
             spec,
             tiles,
@@ -228,6 +244,7 @@ impl From<ThemeSpec> for Theme {
             capture_bar,
             carrier_slot,
             masks,
+            build_item,
         }
     }
 }
@@ -270,6 +287,11 @@ impl Theme {
         (0, (self.spec.image.height - self.spec.hex.height) as i32)
     }
 
+    pub fn hex_sprite_center(&self, x: i32, y: i32) -> (i32, i32, i32) {
+        let (ox, oy) = self.hex_sprite_center_offset();
+        let (x, y, z) = self.map_hex_center(x, y);
+        (x + ox, y + oy / 2, z)
+    }
     pub fn unit_position(&self, tile: &wars::game::Tile) -> Vec3 {
         let (ox, oy) = self.hex_sprite_center_offset();
         let (x, y, z) = self.map_hex_center(tile.x, tile.y);

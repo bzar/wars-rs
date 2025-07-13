@@ -66,6 +66,23 @@ pub struct Visualizer {
 #[derive(Resource, Default, Deref, DerefMut)]
 pub struct VisibleActionButtons(pub HashSet<crate::components::Action>);
 
+#[derive(Resource)]
+pub struct VisibleActionMenu(
+    pub Option<(wars::game::Position, HashSet<crate::components::Action>)>,
+);
+#[derive(Resource)]
+pub struct VisibleBuildMenu(
+    pub  Option<(
+        wars::game::Position,
+        HashSet<wars::model::UnitClass>,
+        Option<wars::game::PlayerNumber>,
+        u32,
+    )>,
+);
+
+#[derive(Resource)]
+pub struct VisibleUnloadMenu(pub Option<(wars::game::Position, Vec<wars::game::UnitId>)>);
+
 #[derive(Resource, Eq, PartialEq)]
 pub enum InputLayer {
     UI,
