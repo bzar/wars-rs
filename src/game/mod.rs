@@ -18,24 +18,24 @@ pub type Health = u32;
 pub type Credits = u32;
 pub type CapturePoints = u32;
 
-#[derive(Serialize, Deserialize, PartialEq)]
+#[derive(Serialize, Deserialize, PartialEq, Clone)]
 pub enum GameState {
     Pregame = 0,
     InProgress,
     Finished,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Tiles(HashMap<TileId, Tile>);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Units(HashMap<UnitId, Unit>);
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Players(Vec<Player>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Position(pub i32, pub i32);
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Game {
     pub state: GameState,
     pub units: Units,
@@ -86,7 +86,7 @@ pub struct Map {
     pub funds: u32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum Action {
     StartGame,
     EndTurn,
@@ -100,7 +100,7 @@ pub enum Action {
     MoveAndLoadInto(UnitId, Vec<Position>),
     MoveAndUnload(UnitId, Vec<Position>, UnitId, Position),
 }
-#[derive(Serialize, Deserialize, thiserror::Error, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, thiserror::Error, Debug, PartialEq, Clone, Copy)]
 pub enum ActionError {
     #[error("Internal error")]
     InternalError,

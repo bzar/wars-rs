@@ -99,7 +99,7 @@ async fn handle_socket(
     Ok(())
 }
 
-fn parse_action(msg: Message, who: SocketAddr) -> ControlFlow<(), state::Action> {
+fn parse_action(msg: Message, _who: SocketAddr) -> ControlFlow<(), state::Action> {
     match msg {
         Message::Text(t) => match serde_json::from_str(t.as_str()) {
             Ok(action) => ControlFlow::Continue(action),
