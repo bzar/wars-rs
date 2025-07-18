@@ -19,7 +19,7 @@ impl Plugin for MainMenuStatePlugin {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 enum PlayerType {
     Human,
     Bot,
@@ -47,6 +47,7 @@ fn main_menu_system(
     });
 
     egui::CentralPanel::default().show(contexts.ctx_mut(), |ui| {
+        let previous_map_index = *map_index;
         ui.vertical_centered(|ui| {
             let map = &maps[*map_index];
             egui::ComboBox::from_label("Map")
@@ -58,29 +59,28 @@ fn main_menu_system(
                 });
 
             let map = &maps[*map_index];
-            if map.player_numbers().len() != player_types.len() {
+            if previous_map_index != *map_index || player_types.is_empty() {
                 *player_types = map
                     .player_numbers()
                     .iter()
                     .map(|pn| (*pn, PlayerType::Human))
                     .collect();
+                player_types.sort_by_key(|(pn, _)| *pn);
             }
 
             player_types.iter_mut().enumerate().for_each(|(i, slot)| {
                 let pn = i as u32 + 1;
-                if map.player_numbers().contains(&pn) {
-                    egui::ComboBox::from_label(format!("Player {pn}"))
-                        .selected_text(match slot {
-                            (_, PlayerType::Human) => "Human",
-                            (_, PlayerType::Bot) => "Bot",
-                            (_, PlayerType::None) => "None",
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(slot, (pn, PlayerType::Human), "Human");
-                            ui.selectable_value(slot, (pn, PlayerType::Bot), "Bot");
-                            ui.selectable_value(slot, (pn, PlayerType::None), "None");
-                        });
-                }
+                egui::ComboBox::from_label(format!("Player {pn}"))
+                    .selected_text(match slot {
+                        (_, PlayerType::Human) => "Human",
+                        (_, PlayerType::Bot) => "Bot",
+                        (_, PlayerType::None) => "None",
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(slot, (pn, PlayerType::Human), "Human");
+                        ui.selectable_value(slot, (pn, PlayerType::Bot), "Bot");
+                        ui.selectable_value(slot, (pn, PlayerType::None), "None");
+                    });
             });
 
             if ui.button("Start game").clicked() {
