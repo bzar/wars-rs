@@ -584,6 +584,7 @@ pub fn move_and_unload(
 
 #[cfg(test)]
 mod test {
+    use crate::game::action::*;
     use crate::game::*;
     use crate::model::*;
     const THIRD_PARTY_MAP: &str = include_str!("../../data/maps/third_party.json");
@@ -608,7 +609,7 @@ mod test {
     #[test]
     fn test_move_and_wait() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
-        let mut game = Game::new(map, &[0, 1]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         assert!(start(&mut game, &mut |_| ()) == Ok(()));
 
         let mut events = Vec::new();
@@ -621,7 +622,7 @@ mod test {
     #[test]
     fn test_end_turn() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
-        let mut game = Game::new(map, &[0, 1]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         assert!(start(&mut game, &mut |_| ()) == Ok(()));
 
         let mut events = Vec::new();
@@ -676,7 +677,7 @@ mod test {
             tiles,
             funds: 0,
         };
-        let mut game = Game::new(map, &[1, 2]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();
@@ -693,7 +694,7 @@ mod test {
                 Event::Move(0, unit_path.clone()),
                 Event::Capture(0, 1, 100),
                 Event::Move(0, unit_path),
-                Event::Captured(0, 1),
+                Event::Captured(0, 1, Some(1)),
             ]
         );
     }
@@ -742,7 +743,7 @@ mod test {
             tiles,
             funds: 0,
         };
-        let mut game = Game::new(map, &[1, 2]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();
@@ -821,7 +822,7 @@ mod test {
             tiles,
             funds: 0,
         };
-        let mut game = Game::new(map, &[1, 2]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         start(&mut game, &mut |_| ()).unwrap();
 
         let unit_id = 0;
@@ -886,7 +887,7 @@ mod test {
             tiles,
             funds: 0,
         };
-        let mut game = Game::new(map, &[1, 2]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();
@@ -964,7 +965,7 @@ mod test {
             tiles,
             funds: 0,
         };
-        let mut game = Game::new(map, &[1, 2]);
+        let mut game = Game::new(map, &[(1, 1), (2, 2)]);
         start(&mut game, &mut |_| ()).unwrap();
 
         let mut events = Vec::new();

@@ -10,6 +10,7 @@ serde_json = "1.0.140"
 serde_derive = "1.0.219"
 enum-iterator = "2.1.0"
 thiserror = "2.0.12"
+postcard = { version = "1.1.1", features = ["alloc", "use-std"] }
 
 [[bin]]
 name = "print_map"

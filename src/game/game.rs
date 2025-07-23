@@ -8,9 +8,11 @@ impl Position {
     pub fn distance_to(&self, &Position(x, y): &Position) -> u32 {
         let &Position(sx, sy) = self;
         let result = if y < sy && x > sx {
-            (sy - y) + ((x - sx) - (sy - y)).abs()
+            let (dx, dy) = (x - sx, sy - y);
+            dx + dy - dx.abs().min(dy.abs())
         } else if x < sx && y > sy {
-            (sx - x) + ((y - sy) - (sx - x)).abs()
+            let (dx, dy) = (sx - x, y - sy);
+            dx + dy - dx.abs().min(dy.abs())
         } else {
             (sx - x).abs() + (sy - y).abs()
         };
@@ -585,7 +587,7 @@ mod test {
     #[test]
     fn third_party_map_rect() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
-        let game = Game::new(map, &[0, 1]);
+        let game = Game::new(map, &[(1, 1), (2, 2)]);
         let (x0, y0, x1, y1) = game.tiles.rect().unwrap();
         assert!(
             x0 == 0 && y0 == -7 && x1 == 14 && y1 == 14,
@@ -599,7 +601,7 @@ mod test {
     #[test]
     fn third_party_ascii() {
         let map = Map::from_json(THIRD_PARTY_MAP).unwrap();
-        let game = Game::new(map, &[0, 1]);
+        let game = Game::new(map, &[(1, 1), (2, 2)]);
         println!("{}", game.ascii_representation());
     }
 
@@ -608,8 +610,29 @@ mod test {
         assert!(Position(0, 0).distance_to(&Position(0, 1)) == 1);
         assert!(Position(0, 0).distance_to(&Position(0, -1)) == 1);
         assert!(Position(0, 0).distance_to(&Position(1, 0)) == 1);
-        assert!(Position(0, 0).distance_to(&Position(1, 0)) == 1);
+        assert!(Position(0, 0).distance_to(&Position(-1, 0)) == 1);
         assert!(Position(0, 0).distance_to(&Position(1, -1)) == 1);
         assert!(Position(0, 0).distance_to(&Position(-1, 1)) == 1);
+
+        assert!(Position(0, 1).distance_to(&Position(0, 0)) == 1);
+        assert!(Position(0, -1).distance_to(&Position(0, 0)) == 1);
+        assert!(Position(1, 0).distance_to(&Position(0, 0)) == 1);
+        assert!(Position(-1, 0).distance_to(&Position(0, 0)) == 1);
+        assert!(Position(1, -1).distance_to(&Position(0, 0)) == 1);
+        assert!(Position(-1, 1).distance_to(&Position(0, 0)) == 1);
+
+        assert!(Position(0, 0).distance_to(&Position(1, 1)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(-1, -1)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(0, 2)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(0, -2)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(2, 0)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(-2, 0)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(2, -2)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(-2, 2)) == 2);
+
+        assert!(Position(0, 0).distance_to(&Position(1, -2)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(2, -1)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(-2, 1)) == 2);
+        assert!(Position(0, 0).distance_to(&Position(-1, 2)) == 2);
     }
 }
