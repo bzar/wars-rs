@@ -100,17 +100,17 @@ impl SpriteAnimation {
                 parts.retain(|part| !part.is_done());
             }
             SpriteAnimationState::Position(duration, ref easing_curve) => {
-                if let Some(position) = easing_curve.sample(self.time / duration) {
+                if let Some(position) = easing_curve.sample(self.time.min(duration) / duration) {
                     transform.translation = position;
                 }
             }
             SpriteAnimationState::Scale(duration, ref easing_curve) => {
-                if let Some(position) = easing_curve.sample(self.time / duration) {
+                if let Some(position) = easing_curve.sample(self.time.min(duration) / duration) {
                     transform.scale = position;
                 }
             }
             SpriteAnimationState::Color(duration, ref color_curve) => {
-                if let Some(color) = color_curve.sample(self.time / duration) {
+                if let Some(color) = color_curve.sample(self.time.min(duration) / duration) {
                     sprite.color = color;
                 }
             }
