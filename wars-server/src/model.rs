@@ -1,11 +1,11 @@
 use sqlx::prelude::*;
 
+use wars::protocol::{GameId, EventIndex};
+
 pub type DatabasePool = sqlx::Pool<sqlx::Sqlite>;
 pub type DatabaseError = sqlx::Error;
 pub type DatabaseResult<T> = Result<T, DatabaseError>;
 
-pub type GameId = u32;
-pub type EventIndex = u32;
 #[derive(FromRow)]
 pub struct Game {
     pub id: GameId,
@@ -73,22 +73,13 @@ pub async fn create_game(game: wars::game::Game, pool: &DatabasePool) -> Databas
         .fetch_one(pool)
         .await
 }
-pub async fn load_game_events(game_id: GameId, since: Option<EventIndex>, pool: &DatabasePool) -> DatabaseResult<Vec<(EventIndex, wars::game::Event)>> {
-    let result = if let Some(since) = since {
-        sqlx::query_as("select * from game_events where game_id = ?1 and index > ?2")
+pub async fn load_game_events(game_id: GameId, since: EventIndex, pool: &DatabasePool) -> DatabaseResult<Vec<(EventIndex, wars::game::Event)>> {
+        let result =sqlx::query_as("select * from game_events where game_id = ?1 and index > ?2")
             .bind(game_id)
             .bind(since)
             .fetch_all(pool).await?
             .into_iter()
             .map(|e: GameEvent| (e.index, ron::from_str::<wars::game::Event>(&e.data).unwrap()))
-            .collect::<Vec<(EventIndex, wars::game::Event)>>()
-    } else {
-        sqlx::query_as("select * from game_events where game_id = ?1")
-            .bind(game_id)
-            .fetch_all(pool).await?
-            .into_iter()
-            .map(|e: GameEvent| (e.index, ron::from_str::<wars::game::Event>(&e.data).unwrap()))
-            .collect()
-    };
-    Ok(result)
+            .collect::<Vec<(EventIndex, wars::game::Event)>>();
+        Ok(result)
 }
