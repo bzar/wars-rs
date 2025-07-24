@@ -6,6 +6,7 @@ use wars::game::PlayerNumber;
 pub enum Player {
     Human,
     Bot,
+    Remote,
 }
 #[derive(Resource)]
 pub enum Game {

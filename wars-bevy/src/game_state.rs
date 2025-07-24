@@ -26,7 +26,6 @@ impl Plugin for GameStatePlugin {
             .insert_resource(VisibleUnloadMenu(None))
             .add_event::<InputEvent>()
             .add_event::<GameEvent>()
-            .add_event::<BotEvent>()
             .add_plugins((
                 crate::camera::CameraPlugin,
                 crate::map::MapPlugin,
@@ -92,22 +91,25 @@ fn on_enter_load_game(
     next_state.set(AppState::InGame);
 }
 fn bot_system(
-    mut bot_events: EventReader<BotEvent>,
     mut game: ResMut<Game>,
+    visualizer: Res<Visualizer>,
     mut event_writer: EventWriter<GameEvent>,
 ) {
+    if !visualizer.state.is_none()
+        || !visualizer.queue.is_empty()
+        || game.in_turn() != Some(&Player::Bot)
+    {
+        return;
+    }
     let Game::InGame(state, ..) = game.as_mut() else {
         return;
     };
     let mut enqueue_event = move |e| {
         event_writer.write(GameEvent(e));
     };
-    for event in bot_events.read() {
-        if event == &BotEvent::RunBot {
-            info!("Running bot system");
-            bot::random_bot(state, &mut enqueue_event).expect("Bot made an ActionError");
-        }
-    }
+
+    info!("Running bot system");
+    bot::random_bot(state, &mut enqueue_event).expect("Bot made an ActionError");
 }
 fn visualizer_system(
     mut commands: Commands,
@@ -133,7 +135,6 @@ fn visualizer_system(
     mut top_bar_colors: Query<&mut BackgroundColor, With<MenuBar>>,
     sprite_sheet: Res<SpriteSheet>,
     mut event_reader: EventReader<GameEvent>,
-    mut bot_event_writer: EventWriter<BotEvent>,
 ) {
     let Game::InGame(state, ..) = game.as_ref() else {
         return;
@@ -194,9 +195,6 @@ fn visualizer_system(
                         for mut fund in funds.iter_mut() {
                             *fund = Funds(player.funds);
                         }
-                    }
-                    if game.in_turn() == Some(&Player::Bot) {
-                        bot_event_writer.write(BotEvent::RunBot);
                     }
                     None
                 }

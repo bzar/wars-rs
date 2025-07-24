@@ -158,11 +158,6 @@ pub enum InputEvent {
 #[derive(Event)]
 pub struct GameEvent(pub wars::game::Event);
 
-#[derive(Event, PartialEq)]
-pub enum BotEvent {
-    RunBot,
-}
-
 #[derive(Component)]
 pub struct ActionMenu;
 
