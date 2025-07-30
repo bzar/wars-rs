@@ -64,3 +64,9 @@ impl EventMessage {
         Ok(postcard::to_allocvec(self)?)
     }
 }
+
+pub fn version_message() -> String {
+    EventMessage::ServerVersion(VERSION.to_string())
+        .as_text()
+        .expect("Could not serialize server version message?")
+}

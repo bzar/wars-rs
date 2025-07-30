@@ -12,10 +12,18 @@ mod resources;
 mod theme;
 mod ui;
 
+mod bevy_nfws;
+
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Hash, States)]
 enum AppState {
     #[default]
     MainMenu,
+    SetupLocal,
+    ConnectToServer,
+    SelectGame,
+    HostSelectMap,
+    HostPreGame,
+    JoinPreGame,
     LoadGame,
     InGame,
 }
@@ -23,6 +31,7 @@ fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(ImagePlugin::default_nearest()),
+            bevy_nfws::NfwsPlugin,
             game_state::GameStatePlugin,
             main_menu_state::MainMenuStatePlugin,
         ))
