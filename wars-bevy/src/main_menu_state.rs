@@ -1,21 +1,19 @@
 use crate::{
-    resources::{Game, Player},
     AppState,
+    resources::{Game, Player},
 };
 use bevy::prelude::*;
-use include_dir::{include_dir, File};
+use include_dir::{File, include_dir};
 
 pub struct MainMenuStatePlugin;
 
 impl Plugin for MainMenuStatePlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(bevy_egui::EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
-        .add_systems(
-            bevy_egui::EguiContextPass,
-            main_menu_system.run_if(in_state(AppState::MainMenu)),
-        );
+        app.add_plugins(bevy_egui::EguiPlugin::default())
+            .add_systems(
+                bevy_egui::EguiPrimaryContextPass,
+                main_menu_system.run_if(in_state(AppState::MainMenu)),
+            );
     }
 }
 
@@ -46,7 +44,10 @@ fn main_menu_system(
             .collect()
     });
 
-    egui::CentralPanel::default().show(contexts.ctx_mut(), |ui| {
+    let Ok(ctx) = contexts.ctx_mut() else {
+        return;
+    };
+    egui::CentralPanel::default().show(ctx, |ui| {
         let previous_map_index = *map_index;
         ui.vertical_centered(|ui| {
             let map = &maps[*map_index];
