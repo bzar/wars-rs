@@ -1,10 +1,16 @@
-use crate::game::{Action, ActionError, Event, Game};
+use crate::game::{Action, ActionError, Event, Game, Map, PlayerNumber};
 use serde::{Deserialize, Serialize};
 
 pub type GameId = u32;
 pub type EventIndex = u32;
 pub const VERSION: &str = "0.1";
 
+#[derive(Serialize, Deserialize, Clone)]
+pub enum PlayerSlotType {
+    Empty,
+    Human(Option<String>),
+    Bot(String),
+}
 #[derive(Serialize, Deserialize)]
 pub enum ActionMessage {
     NoOp,
@@ -12,7 +18,11 @@ pub enum ActionMessage {
     GameAction(GameId, Action),
     SubscribeGame(GameId),
     GetEvents(GameId, EventIndex),
-    CreateGame(Game),
+    GetMaps,
+    CreateGame(String),
+    SetPlayerSlotType(GameId, PlayerNumber, PlayerSlotType),
+    StartGame(GameId),
+    JoinGame(GameId, PlayerNumber),
     Quit,
 }
 
@@ -20,10 +30,14 @@ pub enum ActionMessage {
 pub enum EventMessage {
     ServerVersion(String),
     Pong,
-    GameState(Game, EventIndex),
+    Maps(Vec<Map>),
+    GameState(Game, Vec<(PlayerNumber, PlayerSlotType)>, EventIndex),
     GameCreated(GameId),
+    GameJoined(GameId, PlayerNumber, PlayerSlotType),
+    GameStarted(GameId),
     GameEvent(GameId, Event),
     GameActionError(GameId, ActionError),
+    NoSuchMap,
     NoSuchGame,
     ServerError,
 }

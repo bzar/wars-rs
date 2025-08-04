@@ -1,5 +1,3 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use axum::{
     Router,
     extract::State,
@@ -7,16 +5,25 @@ use axum::{
     response::IntoResponse,
     routing::any,
 };
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use wars::protocol::{self, ActionMessage, EventMessage};
 
-use std::{collections::{HashMap, HashSet}, net::SocketAddr, path::PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    net::SocketAddr,
+    path::PathBuf,
+};
 use tower_http::{
     services::ServeDir,
     trace::{DefaultMakeSpan, TraceLayer},
 };
 
-use futures_util::{Sink, Stream, SinkExt,StreamExt, stream::{SplitStream, SplitSink}};
 use axum::extract::connect_info::ConnectInfo;
+use futures_util::{
+    Sink, SinkExt, Stream, StreamExt,
+    stream::{SplitSink, SplitStream},
+};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 mod model;
@@ -30,7 +37,7 @@ type SenderMessage = Message;
 struct Sender {
     senders: HashMap<SenderId, SenderSocket>,
     next_sender_id: SenderId,
-    subscriptions: HashMap<SubscriptionId, HashSet<SenderId>>
+    subscriptions: HashMap<SubscriptionId, HashSet<SenderId>>,
 }
 
 impl Sender {
@@ -38,7 +45,7 @@ impl Sender {
         Self {
             senders: HashMap::new(),
             next_sender_id: 1,
-            subscriptions: HashMap::new()
+            subscriptions: HashMap::new(),
         }
     }
     fn add_sender(&mut self, sender: SenderSocket) -> SenderId {
@@ -53,21 +60,25 @@ impl Sender {
     }
     async fn send(&mut self, sender_id: &SenderId, message: Message) -> Result<(), axum::Error> {
         let Some(sender) = self.senders.get_mut(sender_id) else {
-            return Ok(())
+            return Ok(());
         };
         sender.send(message).await
     }
-    async fn send_subscribers(&mut self, subscription_id: &SubscriptionId, message: Message) -> Result<(), axum::Error> {
+    async fn send_subscribers(
+        &mut self,
+        subscription_id: &SubscriptionId,
+        message: Message,
+    ) -> Result<(), axum::Error> {
         let Some(sender_ids) = self.subscriptions.get(subscription_id) else {
-            return Ok(())
+            return Ok(());
         };
         let mut result = Ok(());
         for sender_id in sender_ids {
             let Some(sender) = self.senders.get_mut(sender_id) else {
-                return Ok(())
+                return Ok(());
             };
-            
-            if let Err(e) = sender.send(message.clone()).await{
+
+            if let Err(e) = sender.send(message.clone()).await {
                 result = Err(e);
             }
         }
@@ -121,7 +132,7 @@ async fn ws_handler(
     ws.on_upgrade(async move |socket| {
         let (write, read) = socket.split();
         let sender_id = sender.lock().await.add_sender(write);
-        let _ = handle_socket(read, sender, sender_id,addr, pool).await;
+        let _ = handle_socket(read, sender, sender_id, addr, pool).await;
     })
 }
 
@@ -132,9 +143,19 @@ async fn handle_socket(
     who: SocketAddr,
     pool: model::DatabasePool,
 ) -> Result<(), axum::Error> {
-    let mut state = state::State {};
+    let mut state = state::State::new();
 
-    sender.lock().await.send(&sender_id, serialize_event(&EventMessage::ServerVersion(protocol::VERSION.to_owned()), false)).await?;
+    sender
+        .lock()
+        .await
+        .send(
+            &sender_id,
+            serialize_event(
+                &EventMessage::ServerVersion(protocol::VERSION.to_owned()),
+                false,
+            ),
+        )
+        .await?;
 
     while let Some(Ok(msg)) = read.next().await {
         let binary = matches!(msg, Message::Binary(_));
@@ -144,9 +165,11 @@ async fn handle_socket(
         // Protocol level processing
         match action {
             Ok(ActionMessage::Quit) => break,
-            Ok(ActionMessage::SubscribeGame(game_id)) => sender.lock().await.subscribe(sender_id, game_id as usize),
+            Ok(ActionMessage::SubscribeGame(game_id)) => {
+                sender.lock().await.subscribe(sender_id, game_id as usize)
+            }
             Err(_) => break,
-            _ => ()
+            _ => (),
         };
 
         // State level processing
@@ -156,10 +179,18 @@ async fn handle_socket(
             for (recipient, event) in events {
                 match recipient {
                     state::Recipient::Actor => {
-                        sender.lock().await.send(&sender_id, serialize_event(&event, binary)).await?
+                        sender
+                            .lock()
+                            .await
+                            .send(&sender_id, serialize_event(&event, binary))
+                            .await?
                     }
                     state::Recipient::Subscribers(game_id) => {
-                        sender.lock().await.send_subscribers(&(game_id as usize), serialize_event(&event, binary)).await?
+                        sender
+                            .lock()
+                            .await
+                            .send_subscribers(&(game_id as usize), serialize_event(&event, binary))
+                            .await?
                     }
                 }
             }
@@ -174,7 +205,7 @@ fn parse_action(msg: Message, _who: SocketAddr) -> Result<ActionMessage, protoco
         Message::Text(t) => ActionMessage::from_text(&t),
         Message::Binary(d) => ActionMessage::from_bytes(&d),
         Message::Close(_) => Ok(ActionMessage::Quit),
-        _ => Ok(ActionMessage::NoOp)
+        _ => Ok(ActionMessage::NoOp),
     }
 }
 

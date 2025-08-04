@@ -1,23 +1,24 @@
-use crate::{components::*, resources::*, AppState};
+use crate::{AppState, components::*, resources::*};
 use bevy::prelude::*;
 
 pub struct UIPlugin;
 impl Plugin for UIPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(
-            Update,
-            (
-                funds_display_system,
-                end_turn_button_system,
-                input_layer_system,
-                player_colored_ui_system,
-            )
-                .run_if(in_state(AppState::InGame)),
-        );
+        app.add_systems(OnEnter(AppState::InGame), on_enter_game)
+            .add_systems(
+                Update,
+                (
+                    funds_display_system,
+                    end_turn_button_system,
+                    input_layer_system,
+                    player_colored_ui_system,
+                )
+                    .run_if(in_state(AppState::InGame)),
+            );
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn on_enter_game(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,

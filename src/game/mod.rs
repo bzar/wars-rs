@@ -30,7 +30,7 @@ pub struct Tiles(HashMap<TileId, Tile>);
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Units(HashMap<UnitId, Unit>);
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Players(Vec<Player>);
+pub struct Players(pub Vec<Player>);
 
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Position(pub i32, pub i32);
@@ -78,7 +78,7 @@ pub struct Unit {
     pub capturing: bool,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Map {
     pub name: String,
     pub units: HashMap<UnitId, Unit>,
