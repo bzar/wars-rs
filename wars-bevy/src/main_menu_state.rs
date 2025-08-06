@@ -11,7 +11,7 @@ use wars::protocol::{GameId, PlayerSlotType};
 
 pub struct MainMenuStatePlugin;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum PlayerType {
     None,
     Human,
@@ -154,6 +154,7 @@ fn next_event_message(handle: &mut NfwsHandle) -> Result<Option<wars::protocol::
                 NfwsEvent::Connecting => (),
                 NfwsEvent::Connected => (),
                 NfwsEvent::TextMessage(text) => {
+                    debug!("TextMessage: {text}");
                     return wars::protocol::EventMessage::from_text(&text)
                         .map(Some)
                         .map_err(|_| ());
@@ -256,6 +257,7 @@ fn host_pregame_menu_system(
     mut next_state: ResMut<NextState<AppState>>,
     mut handles: Query<(Entity, &mut NfwsHandle)>,
     mut state: Local<HostPregameState>,
+    mut game_state: ResMut<Game>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
@@ -266,7 +268,7 @@ fn host_pregame_menu_system(
         return;
     };
 
-    match (&*state, next_event_message(&mut handle)) {
+    match (&mut *state, next_event_message(&mut handle)) {
         (
             HostPregameState::CreatingGame,
             Ok(Some(wars::protocol::EventMessage::GameCreated(game_id))),
@@ -287,7 +289,7 @@ fn host_pregame_menu_system(
             let players = players
                 .into_iter()
                 .map(|slot| match slot {
-                    (pn, PlayerSlotType::Empty) => (pn, PlayerType::None, "Bot".to_string()),
+                    (pn, PlayerSlotType::Empty) => (pn, PlayerType::None, String::new()),
                     (pn, PlayerSlotType::Human(name)) => {
                         (pn, PlayerType::Human, name.unwrap_or(String::new()))
                     }
@@ -295,6 +297,54 @@ fn host_pregame_menu_system(
                 })
                 .collect();
             *state = HostPregameState::PreparingGame(*game_id, game, players);
+        }
+        (
+            HostPregameState::PreparingGame(game_id, game, players),
+            Ok(Some(wars::protocol::EventMessage::GameJoined(event_game_id, player_number, slot))),
+        ) => {
+            if event_game_id == *game_id {
+                if let Some((player, name)) = players
+                    .iter_mut()
+                    .find_map(|(pn, player, name)| (*pn == player_number).then_some((player, name)))
+                {
+                    match slot {
+                        PlayerSlotType::Empty => {
+                            *player = PlayerType::None;
+                            name.clear();
+                        }
+                        PlayerSlotType::Human(n) => {
+                            *player = PlayerType::Human;
+                            *name = n.unwrap_or_default();
+                        }
+                        PlayerSlotType::Bot(n) => {
+                            *player = PlayerType::Bot;
+                            *name = n;
+                        }
+                    }
+                }
+            }
+        }
+        (
+            HostPregameState::PreparingGame(game_id, game, players),
+            Ok(Some(wars::protocol::EventMessage::GameStarted(event_game_id))),
+        ) => {
+            if event_game_id == *game_id {
+                *game_state = Game::InGame(
+                    game.clone(),
+                    players
+                        .iter()
+                        .filter_map(
+                            |(player_number, player_type, _player_name)| match player_type {
+                                // TODO: Set correctly as remote or local human
+                                PlayerType::None => None,
+                                PlayerType::Human => Some((*player_number, Player::Human)),
+                                PlayerType::Bot => Some((*player_number, Player::Remote)),
+                            },
+                        )
+                        .collect(),
+                );
+                next_state.set(AppState::InGame);
+            }
         }
         (_, Ok(Some(msg))) => {
             let msg_text = msg.as_text().unwrap();
@@ -326,7 +376,8 @@ fn host_pregame_menu_system(
                     .iter_mut()
                     .enumerate()
                     .for_each(|(i, (pn, slot, name))| {
-                        egui::ComboBox::from_label(format!("Player {pn}"))
+                        let previous = slot.clone();
+                        egui::ComboBox::new(pn.clone(), name.as_str())
                             .selected_text(match slot {
                                 PlayerType::Human => "Human",
                                 PlayerType::Bot => "Bot",
@@ -337,6 +388,33 @@ fn host_pregame_menu_system(
                                 ui.selectable_value(slot, PlayerType::Bot, "Bot");
                                 ui.selectable_value(slot, PlayerType::None, "None");
                             });
+
+                        if *slot != previous {
+                            let slot_type = match slot {
+                                PlayerType::None => PlayerSlotType::Empty,
+                                PlayerType::Human => PlayerSlotType::Human(None),
+                                PlayerType::Bot => PlayerSlotType::Bot(String::new()),
+                            };
+                            handle.send_text(
+                                wars::protocol::ActionMessage::SetPlayerSlotType(
+                                    *game_id, *pn, slot_type,
+                                )
+                                .as_text()
+                                .unwrap(),
+                            );
+                        }
+
+                        if *slot == PlayerType::Human {
+                            if name.is_empty() {
+                                if ui.button("Join").clicked() {
+                                    handle.send_text(
+                                        wars::protocol::ActionMessage::JoinGame(*game_id, *pn)
+                                            .as_text()
+                                            .unwrap(),
+                                    );
+                                }
+                            }
+                        }
                     });
                 if ui.button("Start game").clicked() {
                     handle.send_text(

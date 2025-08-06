@@ -56,7 +56,8 @@ impl State {
                     events.push((Recipient::Actor, EventMessage::GameActionError(game_id, e)));
                 }
 
-                if let Err(_) = save_game(game_id, game, new_game_events, pool).await {
+                if let Err(e) = save_game(game_id, game, new_game_events, pool).await {
+                    tracing::error!("Error saving game: {e}");
                     events = Events::from_iter([(Recipient::Actor, EventMessage::ServerError)]);
                 }
 
@@ -90,11 +91,46 @@ impl State {
                     Events::from_iter([(Recipient::Actor, EventMessage::NoSuchMap)])
                 }
             }
-            ActionMessage::StartGame(_) => {
-                unimplemented!("not yet.")
+            ActionMessage::JoinGame(game_id, player_number) => {
+                //TODO: use user data
+                let slot = wars::protocol::PlayerSlotType::Human(Some("It's-a-meee!".to_string()));
+                let Ok(_) = set_game_player(game_id, player_number, &slot, pool).await else {
+                    return Events::from_iter([(Recipient::Actor, EventMessage::NoSuchGame)]);
+                };
+                Events::from_iter([(
+                    Recipient::Subscribers(game_id),
+                    EventMessage::GameJoined(game_id, player_number, slot),
+                )])
             }
-            ActionMessage::JoinGame(_, _) => {
-                unimplemented!("not yet.")
+            ActionMessage::StartGame(game_id) => {
+                let mut events = vec![(
+                    Recipient::Subscribers(game_id),
+                    EventMessage::GameStarted(game_id),
+                )];
+                let mut new_game_events = Vec::new();
+                let (mut game, _players, _last_event_index) = match load_game(game_id, pool).await {
+                    Ok(game) => game,
+                    Err(_) => {
+                        return Events::from_iter([(Recipient::Actor, EventMessage::NoSuchGame)]);
+                    }
+                };
+                let mut emit = |event: wars::game::Event| {
+                    new_game_events.push(event.clone());
+                    events.push((
+                        Recipient::Subscribers(game_id),
+                        EventMessage::GameEvent(game_id, event),
+                    ));
+                };
+                if let Err(e) = wars::game::action::start(&mut game, &mut emit) {
+                    events.push((Recipient::Actor, EventMessage::GameActionError(game_id, e)));
+                }
+
+                if let Err(e) = save_game(game_id, game, new_game_events, pool).await {
+                    tracing::error!("Error saving game: {e}");
+                    events = Events::from_iter([(Recipient::Actor, EventMessage::ServerError)]);
+                }
+
+                events
             }
             ActionMessage::GetEvents(game_id, since) => {
                 let Ok(events) = load_game_events(game_id, since, pool).await else {

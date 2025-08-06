@@ -80,7 +80,7 @@ pub async fn save_game(
 
     let data = ron::to_string(&game).unwrap();
 
-    sqlx::query("update games set data = ?1, last_event_index = ?2 where id = (?3))")
+    sqlx::query("update games set data = ?1, last_event_index = ?2 where id = ?3")
         .bind(game_id)
         .bind(data)
         .bind(last_event_index)
