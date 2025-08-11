@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use crate::{
     AppState,
     bevy_nfws::{NfwsEvent, NfwsHandle},
+    connection::{Connection, ConnectionEvent},
     resources::{Game, Player},
 };
 use bevy::prelude::*;
@@ -59,45 +60,19 @@ fn main_menu_system(
 }
 
 fn connect_to_server_menu_system(
-    mut commands: Commands,
     mut contexts: bevy_egui::EguiContexts,
     mut next_state: ResMut<NextState<AppState>>,
     mut address: Local<Option<String>>,
-    mut handles: Query<(Entity, &mut NfwsHandle)>,
+    mut connection: Single<&mut Connection>,
 ) {
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 
-    if let Some((handle_id, mut handle)) = handles.single_mut().ok() {
-        let version_message = wars::protocol::version_message();
-        match handle.next_event() {
-            crate::bevy_nfws::NfwsPollResult::Closed => commands.entity(handle_id).despawn(),
-            crate::bevy_nfws::NfwsPollResult::Empty => (),
-            crate::bevy_nfws::NfwsPollResult::Event(nfws_event) => match nfws_event {
-                NfwsEvent::Connecting => (),
-                NfwsEvent::Connected => (),
-                NfwsEvent::TextMessage(t) if t == version_message => {
-                    next_state.set(AppState::SelectGame);
-                }
-                NfwsEvent::TextMessage(t) => {
-                    info!("Received text message: {t}, expected {version_message}");
-                    commands.entity(handle_id).despawn();
-                }
-                NfwsEvent::BinaryMessage(_) => {
-                    info!("Received unexpected binary message");
-                    commands.entity(handle_id).despawn();
-                }
-                NfwsEvent::Error(e) => {
-                    error!("Error connecting: {e:?}");
-                    commands.entity(handle_id).despawn();
-                }
-                NfwsEvent::Closed(e) => {
-                    error!("Server closed the connection connecting: {e:?}");
-                    commands.entity(handle_id).despawn();
-                }
-            },
-        };
+    if connection.is_up() {
+        if let Some(ConnectionEvent::Connected) = connection.recv() {
+            next_state.set(AppState::SelectGame);
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.label("Connecting...");
@@ -107,8 +82,7 @@ fn connect_to_server_menu_system(
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.text_edit_singleline(address);
             if ui.button("Connect").clicked() {
-                let new_handle = crate::bevy_nfws::NfwsHandle::new(address.clone());
-                commands.spawn(new_handle).id();
+                connection.connect(address.clone());
             }
             if ui.button("Back").clicked() {
                 next_state.set(AppState::MainMenu);
@@ -118,17 +92,16 @@ fn connect_to_server_menu_system(
 }
 
 fn select_game_menu_system(
-    mut commands: Commands,
     mut contexts: bevy_egui::EguiContexts,
     mut next_state: ResMut<NextState<AppState>>,
-    mut handles: Query<(Entity, &mut NfwsHandle)>,
+    mut connection: Single<&mut Connection>,
 ) {
-    let Ok(ctx) = contexts.ctx_mut() else {
-        return;
-    };
-
-    let Ok((handle_entity, handle)) = handles.single() else {
+    if !connection.is_up() {
         next_state.set(AppState::MainMenu);
+        return;
+    }
+
+    let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
 
@@ -138,43 +111,17 @@ fn select_game_menu_system(
             next_state.set(AppState::HostSelectMap);
         }
         if ui.button("Back").clicked() {
-            commands.entity(handle_entity).despawn();
+            connection.disconnect();
             next_state.set(AppState::ConnectToServer);
         }
         ui.label("TODO: Joinable games here");
     });
 }
 
-fn next_event_message(handle: &mut NfwsHandle) -> Result<Option<wars::protocol::EventMessage>, ()> {
-    loop {
-        match handle.next_event() {
-            crate::bevy_nfws::NfwsPollResult::Closed => return Err(()),
-            crate::bevy_nfws::NfwsPollResult::Empty => return Ok(None),
-            crate::bevy_nfws::NfwsPollResult::Event(nfws_event) => match nfws_event {
-                NfwsEvent::Connecting => (),
-                NfwsEvent::Connected => (),
-                NfwsEvent::TextMessage(text) => {
-                    debug!("TextMessage: {text}");
-                    return wars::protocol::EventMessage::from_text(&text)
-                        .map(Some)
-                        .map_err(|_| ());
-                }
-                NfwsEvent::BinaryMessage(bytes) => {
-                    return wars::protocol::EventMessage::from_bytes(&bytes)
-                        .map(Some)
-                        .map_err(|_| ());
-                }
-                NfwsEvent::Error(_) => return Err(()),
-                NfwsEvent::Closed(_) => return Err(()),
-            },
-        }
-    }
-}
 fn host_select_map_menu_system(
-    mut commands: Commands,
     mut contexts: bevy_egui::EguiContexts,
     mut next_state: ResMut<NextState<AppState>>,
-    mut handles: Query<(Entity, &mut NfwsHandle)>,
+    mut connection: Single<&mut Connection>,
     mut maps: Local<Option<Vec<wars::game::Map>>>,
     mut map_index: Local<usize>,
     mut pregame_state: Local<HostPregameState>,
@@ -183,25 +130,20 @@ fn host_select_map_menu_system(
         return;
     };
 
-    let Ok((handle_entity, mut handle)) = handles.single_mut() else {
+    if !connection.is_up() {
         next_state.set(AppState::MainMenu);
         return;
-    };
+    }
 
     if maps.is_none() {
-        handle.send_text(wars::protocol::ActionMessage::GetMaps.as_text().unwrap());
+        connection.send(wars::protocol::ActionMessage::GetMaps);
         *maps = Some(Vec::new());
     }
 
-    match next_event_message(&mut handle) {
-        Ok(Some(wars::protocol::EventMessage::Maps(ms))) => *maps = Some(ms),
-        Ok(_) => (),
-        Err(_) => {
-            commands.entity(handle_entity).despawn();
-            next_state.set(AppState::MainMenu);
-            return;
-        }
+    if let Some(ConnectionEvent::Maps(ms)) = connection.recv() {
+        *maps = Some(ms);
     }
+
     egui::CentralPanel::default().show(ctx, |ui| {
         if let Some(ref maps) = *maps
             && !maps.is_empty()
@@ -226,11 +168,7 @@ fn host_select_map_menu_system(
         if ui.button("Create game").clicked()
             && let Some(map) = map
         {
-            handle.send_text(
-                wars::protocol::ActionMessage::CreateGame(map.name.clone())
-                    .as_text()
-                    .unwrap(),
-            );
+            connection.send(wars::protocol::ActionMessage::CreateGame(map.name.clone()));
             *pregame_state = HostPregameState::CreatingGame;
             next_state.set(AppState::HostPreGame);
         }
@@ -252,10 +190,9 @@ enum HostPregameState {
     ),
 }
 fn host_pregame_menu_system(
-    mut commands: Commands,
     mut contexts: bevy_egui::EguiContexts,
     mut next_state: ResMut<NextState<AppState>>,
-    mut handles: Query<(Entity, &mut NfwsHandle)>,
+    mut connection: Single<&mut Connection>,
     mut state: Local<HostPregameState>,
     mut game_state: ResMut<Game>,
 ) {
@@ -263,27 +200,20 @@ fn host_pregame_menu_system(
         return;
     };
 
-    let Ok((handle_entity, mut handle)) = handles.single_mut() else {
+    if !connection.is_up() {
         next_state.set(AppState::MainMenu);
         return;
     };
 
-    match (&mut *state, next_event_message(&mut handle)) {
-        (
-            HostPregameState::CreatingGame,
-            Ok(Some(wars::protocol::EventMessage::GameCreated(game_id))),
-        ) => {
+    match (&mut *state, connection.recv()) {
+        (HostPregameState::CreatingGame, Some(ConnectionEvent::GameCreated(game_id))) => {
             info!("Game created with id {game_id}");
             *state = HostPregameState::LoadingGame(game_id);
-            handle.send_text(
-                wars::protocol::ActionMessage::SubscribeGame(game_id)
-                    .as_text()
-                    .unwrap(),
-            );
+            connection.send(wars::protocol::ActionMessage::SubscribeGame(game_id));
         }
         (
             HostPregameState::LoadingGame(game_id),
-            Ok(Some(wars::protocol::EventMessage::GameState(game, players, last_event))),
+            Some(ConnectionEvent::GameState(game, players, last_event)),
         ) => {
             info!("Received game state, last event: {last_event}");
             let players = players
@@ -300,7 +230,7 @@ fn host_pregame_menu_system(
         }
         (
             HostPregameState::PreparingGame(game_id, game, players),
-            Ok(Some(wars::protocol::EventMessage::GameJoined(event_game_id, player_number, slot))),
+            Some(ConnectionEvent::GameJoined(event_game_id, player_number, slot)),
         ) => {
             if event_game_id == *game_id {
                 if let Some((player, name)) = players
@@ -326,7 +256,7 @@ fn host_pregame_menu_system(
         }
         (
             HostPregameState::PreparingGame(game_id, game, players),
-            Ok(Some(wars::protocol::EventMessage::GameStarted(event_game_id))),
+            Some(ConnectionEvent::GameStarted(event_game_id)),
         ) => {
             if event_game_id == *game_id {
                 *game_state = Game::InGame(
@@ -346,17 +276,10 @@ fn host_pregame_menu_system(
                 next_state.set(AppState::InGame);
             }
         }
-        (_, Ok(Some(msg))) => {
-            let msg_text = msg.as_text().unwrap();
-            info!("Unexpected {msg_text}");
+        (_, Some(connection_event)) => {
+            info!("Unexpected event");
         }
-        (_, Ok(None)) => (),
-
-        (_, Err(_)) => {
-            commands.entity(handle_entity).despawn();
-            next_state.set(AppState::MainMenu);
-            return;
-        }
+        _ => (),
     }
 
     match &mut *state {
@@ -395,33 +318,23 @@ fn host_pregame_menu_system(
                                 PlayerType::Human => PlayerSlotType::Human(None),
                                 PlayerType::Bot => PlayerSlotType::Bot(String::new()),
                             };
-                            handle.send_text(
-                                wars::protocol::ActionMessage::SetPlayerSlotType(
-                                    *game_id, *pn, slot_type,
-                                )
-                                .as_text()
-                                .unwrap(),
-                            );
+                            connection.send(wars::protocol::ActionMessage::SetPlayerSlotType(
+                                *game_id, *pn, slot_type,
+                            ));
                         }
 
                         if *slot == PlayerType::Human {
                             if name.is_empty() {
                                 if ui.button("Join").clicked() {
-                                    handle.send_text(
-                                        wars::protocol::ActionMessage::JoinGame(*game_id, *pn)
-                                            .as_text()
-                                            .unwrap(),
-                                    );
+                                    connection.send(wars::protocol::ActionMessage::JoinGame(
+                                        *game_id, *pn,
+                                    ));
                                 }
                             }
                         }
                     });
                 if ui.button("Start game").clicked() {
-                    handle.send_text(
-                        wars::protocol::ActionMessage::StartGame(*game_id)
-                            .as_text()
-                            .unwrap(),
-                    );
+                    connection.send(wars::protocol::ActionMessage::StartGame(*game_id));
                 }
                 if ui.button("Back").clicked() {
                     next_state.set(AppState::HostSelectMap);

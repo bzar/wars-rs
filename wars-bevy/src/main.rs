@@ -4,6 +4,7 @@ mod animation;
 mod bot;
 mod camera;
 mod components;
+mod connection;
 mod game_state;
 mod interaction_state;
 mod main_menu_state;
@@ -34,6 +35,7 @@ fn main() {
             bevy_nfws::NfwsPlugin,
             game_state::GameStatePlugin,
             main_menu_state::MainMenuStatePlugin,
+            connection::ConnectionPlugin,
         ))
         .insert_state(AppState::default())
         .run();
