@@ -1,6 +1,6 @@
 use std::{collections::HashSet, f32::consts::TAU};
 
-use crate::{animation, components::*, resources::*, AppState};
+use crate::{AppState, animation, components::*, resources::*};
 use bevy::{asset::RenderAssetUsages, prelude::*};
 use wars::game::PlayerNumber;
 
@@ -956,7 +956,7 @@ pub fn spawn_unload_menu(
     theme: &Theme,
     sprite_sheet: &SpriteSheet,
 ) {
-    let Game::InGame(game, _) = game else {
+    let Game::InGame(game, _, _) = game else {
         panic!("Not in game");
     };
     let menu = commands

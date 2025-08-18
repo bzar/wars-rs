@@ -1,10 +1,10 @@
+use crate::connection::Connection;
 use crate::interaction_state::InteractionEvent;
 use bevy::prelude::*;
-use std::ops::DerefMut;
 
 use crate::interaction_state::InteractionState;
 
-use crate::{animation, bot, components::*, map, resources::*, theme, AppState};
+use crate::{AppState, animation, bot, components::*, map, resources::*, theme};
 
 pub struct GameStatePlugin;
 
@@ -25,6 +25,7 @@ impl Plugin for GameStatePlugin {
             .insert_resource(VisibleBuildMenu(None))
             .insert_resource(VisibleUnloadMenu(None))
             .add_event::<InputEvent>()
+            .add_event::<GameAction>()
             .add_event::<GameEvent>()
             .add_plugins((
                 crate::camera::CameraPlugin,
@@ -42,6 +43,8 @@ impl Plugin for GameStatePlugin {
                     interaction_event_system,
                     interaction_state_init_system,
                     bot_system,
+                    remote_game_system,
+                    action_dispatch_system,
                 )
                     .run_if(in_state(AppState::InGame)),
             );
@@ -75,19 +78,22 @@ fn on_enter_load_game(
     mut next_state: ResMut<NextState<AppState>>,
     mut game_events: EventWriter<GameEvent>,
 ) {
-    let Game::PreGame(map, players) = game.as_ref() else {
+    let Game::PreGame(map, players, game_id) = game.as_ref() else {
         panic!("Entered game without pregame");
     };
     let mut player_numbers = players.keys().map(|&pn| (pn, 0)).collect::<Vec<_>>();
     player_numbers.sort();
     let mut state = wars::game::Game::new(map.clone(), &player_numbers);
 
-    wars::game::action::start(&mut state, &mut |event| {
-        game_events.write(GameEvent(event));
-    })
-    .expect("Could not start game");
+    if game_id.is_none() {
+        // Local game
+        wars::game::action::start(&mut state, &mut |event| {
+            game_events.write(GameEvent(event));
+        })
+        .expect("Could not start game");
+    }
 
-    *game = Game::InGame(state, players.clone());
+    *game = Game::InGame(state, players.clone(), game_id.clone());
     next_state.set(AppState::InGame);
 }
 fn bot_system(
@@ -380,14 +386,22 @@ fn interaction_state_init_system(
     mut interaction_state: ResMut<InteractionState>,
     game: Res<Game>,
 ) {
-    let Game::InGame(game, players) = game.as_ref() else {
+    let Game::InGame(game, players, game_id) = game.as_ref() else {
         return;
     };
 
     for GameEvent(event) in game_events.read() {
+        info!(
+            "interaction_game_init_system: event = {event:?}, players = {players:?}, game_id = {game_id:?}"
+        );
         match event {
             wars::game::Event::StartTurn(player_number) => {
                 if players.get(&player_number) == Some(&Player::Human) {
+                    let s = &game.state;
+                    let t = game.in_turn_index;
+                    info!(
+                        "Human player starting turn, initializing interaction state from state={s:?}, turn={t:?}"
+                    );
                     *interaction_state = InteractionState::from_game(&game);
                 }
             }
@@ -398,7 +412,7 @@ fn interaction_state_init_system(
 fn interaction_event_system(
     mut commands: Commands,
     mut events: EventReader<InputEvent>,
-    mut game_events: EventWriter<GameEvent>,
+    mut game_actions: EventWriter<GameAction>,
     mut interaction_state: ResMut<InteractionState>,
     mut game_res: ResMut<Game>,
     menus: (
@@ -414,14 +428,11 @@ fn interaction_event_system(
     mut damage_indicators: Query<(&Unit, &mut DamageIndicator)>,
     mut action_menus: Query<(&mut Node, &mut Visibility), (With<ActionMenu>, Without<BuildMenu>)>,
 ) {
-    let Game::InGame(game, players) = game_res.as_mut() else {
+    let Game::InGame(game, players, _) = game_res.as_mut() else {
         return;
     };
     let (mut visible_action_menu, mut visible_build_menu, mut visible_unload_menu) = menus;
 
-    let mut enqueue_event = move |e| {
-        game_events.write(GameEvent(e));
-    };
     let mut interaction_event_handler = |event, mut game: &mut wars::game::Game| {
         info!("Interaction event: {event:?}");
         match event {
@@ -431,13 +442,10 @@ fn interaction_event_system(
                 });
             }
             InteractionEvent::MoveAndWait(unit_id, ref path) => {
-                wars::game::action::move_and_wait(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndWait(
                     unit_id,
-                    &path,
-                    &mut enqueue_event,
-                )
-                .expect("Could not move unit");
+                    path.clone(),
+                )));
             }
             InteractionEvent::MoveAndAttack(unit_id, ref path, target_id) => {
                 for (_, mut highlight) in unit_highlights.iter_mut() {
@@ -449,59 +457,43 @@ fn interaction_event_system(
                 for (_, mut in_attack_range) in tile_in_attack_ranges.iter_mut() {
                     *in_attack_range = InAttackRange(false);
                 }
-                wars::game::action::move_and_attack(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndAttack(
                     unit_id,
-                    &path,
+                    path.clone(),
                     target_id,
-                    &mut enqueue_event,
-                )
-                .expect("Could not attack");
+                )));
             }
             InteractionEvent::MoveAndCapture(unit_id, ref path) => {
-                wars::game::action::move_and_capture(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndCapture(
                     unit_id,
-                    &path,
-                    &mut enqueue_event,
-                )
-                .expect("Could not capture tile");
+                    path.clone(),
+                )));
             }
             InteractionEvent::MoveAndDeploy(unit_id, ref path) => {
-                wars::game::action::move_and_deploy(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndDeploy(
                     unit_id,
-                    &path,
-                    &mut enqueue_event,
-                )
-                .expect("Could not deploy unit");
+                    path.clone(),
+                )));
             }
             InteractionEvent::Undeploy(unit_id) => {
-                wars::game::action::undeploy(game.deref_mut(), unit_id, &mut enqueue_event)
-                    .expect("Could not undeploy unit");
+                game_actions.write(GameAction(wars::game::Action::Undeploy(unit_id)));
             }
             InteractionEvent::MoveAndLoadInto(unit_id, ref path) => {
-                wars::game::action::move_and_load_into(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndLoadInto(
                     unit_id,
-                    &path,
-                    &mut enqueue_event,
-                )
-                .expect("Could not load into unit");
+                    path.clone(),
+                )));
             }
             InteractionEvent::MoveAndUnloadUnitTo(carrier_id, ref path, unit_id, position) => {
                 for (_, mut highlight) in tile_highlights.iter_mut() {
                     *highlight = TileHighlight::Normal;
                 }
-                wars::game::action::move_and_unload(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::MoveAndUnload(
                     carrier_id,
-                    &path,
+                    path.clone(),
                     unit_id,
                     position,
-                    &mut enqueue_event,
-                )
-                .expect("Could not unload carried unit");
+                )));
             }
             InteractionEvent::SelectDestination(ref options) => {
                 for (Tile(tile_id), mut highlight) in tile_highlights.iter_mut() {
@@ -588,13 +580,10 @@ fn interaction_event_system(
             }
             InteractionEvent::BuildUnit(tile_id, unit_type) => {
                 let tile = game.tiles.get(tile_id).expect("Tile does not exist");
-                wars::game::action::build(
-                    game.deref_mut(),
+                game_actions.write(GameAction(wars::game::Action::Build(
                     tile.position(),
                     unit_type,
-                    &mut enqueue_event,
-                )
-                .expect("Could not build unit");
+                )));
                 *visible_build_menu = VisibleBuildMenu(None);
             }
             InteractionEvent::CancelSelectUnitToBuild => {
@@ -626,8 +615,7 @@ fn interaction_event_system(
                 }
             }
             InteractionEvent::EndTurn => {
-                wars::game::action::end_turn(&mut game, &mut enqueue_event)
-                    .expect("Could not end turn")
+                game_actions.write(GameAction(wars::game::Action::EndTurn));
             }
         }
     };
@@ -642,5 +630,74 @@ fn interaction_event_system(
         interaction_state
             .handle(*event, game, &mut interaction_event_handler)
             .expect("Interaction error");
+    }
+}
+
+fn action_dispatch_system(
+    mut next_state: ResMut<NextState<AppState>>,
+    mut connection: Single<&mut Connection>,
+    mut game: ResMut<Game>,
+    mut game_actions: EventReader<GameAction>,
+    mut game_events: EventWriter<GameEvent>,
+) {
+    let Game::InGame(game, _players, game_id) = game.as_mut() else {
+        error!("Not in game!");
+        next_state.set(AppState::MainMenu);
+        return;
+    };
+
+    for GameAction(action) in game_actions.read() {
+        if let Some(game_id) = game_id {
+            // Remote game
+            connection.send(wars::protocol::ActionMessage::GameAction(
+                *game_id,
+                action.clone(),
+            ));
+        } else {
+            // Local game
+            wars::game::action::perform(game, action.clone(), &mut |event| {
+                game_events.write(GameEvent(event));
+            })
+            .expect("Error performing action");
+        }
+    }
+}
+fn remote_game_system(
+    mut next_state: ResMut<NextState<AppState>>,
+    mut connection: Single<&mut Connection>,
+    mut game: ResMut<Game>,
+    mut game_events: EventWriter<GameEvent>,
+) {
+    let Game::InGame(game, _players, game_id) = game.as_mut() else {
+        error!("Not in game!");
+        next_state.set(AppState::MainMenu);
+        return;
+    };
+
+    let Some(game_id) = game_id else {
+        // Local game
+        return;
+    };
+    for event in connection.recv_all() {
+        match event {
+            crate::connection::ConnectionEvent::GameEvent(event_game_id, game_event) => {
+                info!("GameEvent: {event_game_id}: {game_event:?}");
+                if *game_id != event_game_id {
+                    continue;
+                }
+                wars::game::action::process(game, &game_event).expect("Error processing event");
+                game_events.write(GameEvent(game_event));
+            }
+            crate::connection::ConnectionEvent::GameActionError(event_game_id, action_error) => {
+                if *game_id != event_game_id {
+                    continue;
+                }
+                error!("GameActionError: {action_error}");
+            }
+            crate::connection::ConnectionEvent::Disconnected => {
+                next_state.set(AppState::MainMenu);
+            }
+            _ => (),
+        }
     }
 }

@@ -44,6 +44,8 @@ pub async fn load_game(
         .await
         .map(|game: Game| (ron::from_str(&game.data).unwrap(), game.last_event_index))?;
 
+    let data = ron::to_string(&game).unwrap();
+    // tracing::info!("Loaded {data}");
     let players = sqlx::query_as("select player_number, data from game_players where game_id = ?1")
         .bind(game_id)
         .fetch_all(pool)
@@ -79,11 +81,11 @@ pub async fn save_game(
     }
 
     let data = ron::to_string(&game).unwrap();
-
+    // tracing::info!("Saving {data}");
     sqlx::query("update games set data = ?1, last_event_index = ?2 where id = ?3")
-        .bind(game_id)
         .bind(data)
         .bind(last_event_index)
+        .bind(game_id)
         .execute(pool)
         .await?;
     Ok(last_event_index)

@@ -2,7 +2,7 @@ use bevy::prelude::*;
 use std::collections::VecDeque;
 use wars::{
     game::{ActionError, Game, Map, PlayerNumber},
-    protocol::{ActionMessage, EventIndex, EventMessage, GameId, PlayerSlotType},
+    protocol::{ActionMessage, EventIndex, GameId, PlayerSlotType},
 };
 
 use crate::bevy_nfws::NfwsHandle;

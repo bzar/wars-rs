@@ -18,7 +18,7 @@ pub type Health = u32;
 pub type Credits = u32;
 pub type CapturePoints = u32;
 
-#[derive(Serialize, Deserialize, PartialEq, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub enum GameState {
     Pregame = 0,
     InProgress,
@@ -86,7 +86,7 @@ pub struct Map {
     pub funds: u32,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Action {
     StartGame,
     EndTurn,
@@ -140,6 +140,10 @@ pub enum ActionError {
     UnitIsDeployed,
     #[error("Unit is not deployed")]
     UnitIsNotDeployed,
+    #[error("Player not found")]
+    PlayerNotFound,
+    #[error("Integrity error")]
+    IntegrityError,
 }
 
 #[derive(thiserror::Error, Debug, PartialEq)]

@@ -2,6 +2,7 @@ use crate::model::{
     DatabasePool, create_game, load_game, load_game_events, save_game, set_game_player,
 };
 use include_dir::{File, include_dir};
+use std::sync::LazyLock;
 use wars::protocol::{ActionMessage, EventMessage, GameId};
 
 #[derive(Copy, Clone)]
@@ -11,11 +12,9 @@ pub enum Recipient {
 }
 pub type Events = Vec<(Recipient, EventMessage)>;
 
-pub struct State {
-    maps: Vec<wars::game::Map>,
-}
+pub struct State {}
 
-fn get_all_maps() -> Vec<wars::game::Map> {
+static MAPS: LazyLock<Vec<wars::game::Map>> = LazyLock::new(|| {
     include_dir!("$CARGO_MANIFEST_DIR/../data/maps")
         .entries()
         .into_iter()
@@ -25,18 +24,18 @@ fn get_all_maps() -> Vec<wars::game::Map> {
                 .and_then(|content| wars::game::Map::from_json(content).ok())
         })
         .collect()
-}
+});
+
 impl State {
     pub fn new() -> Self {
-        Self {
-            maps: get_all_maps(),
-        }
+        Self {}
     }
     pub async fn action(&mut self, action: ActionMessage, pool: &DatabasePool) -> Events {
         match action {
             ActionMessage::NoOp => Events::new(),
             ActionMessage::Ping => Events::from_iter([(Recipient::Actor, EventMessage::Pong)]),
             ActionMessage::GameAction(game_id, action) => {
+                tracing::info!("GameAction({game_id}, {action:?})");
                 let mut events = Events::new();
                 let mut new_game_events = Vec::new();
                 let (mut game, _players, _last_event_index) = match load_game(game_id, pool).await {
@@ -53,6 +52,7 @@ impl State {
                     ));
                 };
                 if let Err(e) = wars::game::action::perform(&mut game, action, &mut emit) {
+                    tracing::info!("Error performing action: {e}");
                     events.push((Recipient::Actor, EventMessage::GameActionError(game_id, e)));
                 }
 
@@ -75,8 +75,8 @@ impl State {
             ActionMessage::CreateGame(map_name) => {
                 tracing::info!("CreateGame {map_name}");
                 tracing::info!("Maps:");
-                self.maps.iter().for_each(|m| tracing::info!("{}", m.name));
-                let map = self.maps.iter().find(|m| m.name == map_name);
+                MAPS.iter().for_each(|m| tracing::info!("{}", m.name));
+                let map = MAPS.iter().find(|m| m.name == map_name);
                 if let Some(map) = map {
                     tracing::info!("Found map");
                     let players: Vec<_> = map.player_numbers().iter().map(|pn| (*pn, 0)).collect();
@@ -103,6 +103,7 @@ impl State {
                 )])
             }
             ActionMessage::StartGame(game_id) => {
+                tracing::info!("Starting game {game_id}");
                 let mut events = vec![(
                     Recipient::Subscribers(game_id),
                     EventMessage::GameStarted(game_id),
@@ -122,6 +123,7 @@ impl State {
                     ));
                 };
                 if let Err(e) = wars::game::action::start(&mut game, &mut emit) {
+                    tracing::info!("Error starting game: {e}");
                     events.push((Recipient::Actor, EventMessage::GameActionError(game_id, e)));
                 }
 
@@ -142,7 +144,7 @@ impl State {
                     .collect()
             }
             ActionMessage::GetMaps => {
-                Events::from_iter([(Recipient::Actor, EventMessage::Maps(self.maps.clone()))])
+                Events::from_iter([(Recipient::Actor, EventMessage::Maps(MAPS.clone()))])
             }
             ActionMessage::Quit => Events::new(),
             ActionMessage::SetPlayerSlotType(game_id, player_number, slot) => {

@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::game::*;
 use crate::model::*;
 
@@ -21,6 +23,197 @@ pub fn perform(game: &mut Game, action: Action, emit: &mut dyn FnMut(Event)) -> 
     }
 }
 
+pub fn process(game: &mut Game, event: &Event) -> ActionResult<()> {
+    match event {
+        &Event::StartTurn(player_number) => game.set_player_in_turn(player_number)?,
+        &Event::EndTurn(_player_number) => (),
+        &Event::Funds(player_number, amount) => {
+            let mut player = game
+                .get_player(player_number)
+                .ok_or(ActionError::PlayerNotFound)?;
+            player.funds += amount;
+            game.players.update(player)?;
+        }
+        &Event::UnitRepair(unit_id, amount) => {
+            game.units
+                .get(unit_id)
+                .ok_or(ActionError::UnitNotFound)?
+                .health = amount;
+        }
+        &Event::WinGame(_player_number) => {
+            game.state = GameState::Finished;
+        }
+        &Event::Surrender(player_number) => {
+            game.tiles
+                .owned_by_player(player_number)
+                .map(|(tile_id, tile)| {
+                    (
+                        tile_id,
+                        Tile {
+                            owner: None,
+                            ..*tile
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .try_for_each(|(tile_id, tile)| game.tiles.update(tile_id, tile))?;
+
+            // Neutralize owned units
+            game.units
+                .owned_by_player(player_number)
+                .map(|(unit_id, unit)| {
+                    (
+                        unit_id,
+                        Unit {
+                            owner: None,
+                            ..unit.clone()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .try_for_each(|(unit_id, unit)| game.units.update(unit_id, unit))?;
+        }
+        &Event::Move(unit_id, ref path) => {
+            let (src_tile_id, mut src_tile) = game
+                .tiles
+                .get_unit_tile(unit_id)
+                .ok_or(ActionError::UnitNotOnMap)?;
+            let (dst_tile_id, mut dst_tile) = game
+                .tiles
+                .get_at(path.last().ok_or(ActionError::InvalidPath)?)?;
+
+            src_tile.unit = None;
+            dst_tile.unit = Some(unit_id);
+
+            game.update_tiles_and_units([(src_tile_id, src_tile), (dst_tile_id, dst_tile)], [])?;
+        }
+        &Event::Wait(unit_id) => {
+            let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
+            unit.moved = true;
+            game.update_tiles_and_units([], [(unit_id, unit)])?;
+        }
+        &Event::Attack(attacker_id, target_id, damage) => {
+            let mut attacker = game
+                .units
+                .get(attacker_id)
+                .ok_or(ActionError::UnitNotFound)?;
+            let mut target = game.units.get(target_id).ok_or(ActionError::UnitNotFound)?;
+            attacker.moved = true;
+            target.health -= target.health.min(damage);
+            game.update_tiles_and_units([], [(attacker_id, attacker), (target_id, target)])?;
+        }
+        &Event::Counterattack(attacker_id, target_id, damage) => {
+            let mut attacker = game
+                .units
+                .get(attacker_id)
+                .ok_or(ActionError::UnitNotFound)?;
+            let mut target = game.units.get(target_id).ok_or(ActionError::UnitNotFound)?;
+            attacker.moved = true;
+            target.health -= target.health.min(damage);
+            game.update_tiles_and_units([], [(attacker_id, attacker), (target_id, target)])?;
+        }
+        &Event::Destroyed(_attacker_id, target_id) => {
+            let _target = game.units.get(target_id).ok_or(ActionError::UnitNotFound)?;
+            game.units.remove(target_id)?;
+            if let Some((target_tile_id, mut target_tile)) = game.tiles.get_unit_tile(target_id) {
+                target_tile.unit = None;
+                game.update_tiles_and_units([(target_tile_id, target_tile)], [])?;
+            }
+        }
+        &Event::Deploy(unit_id) => {
+            let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
+            unit.moved = true;
+            unit.deployed = true;
+            game.update_tiles_and_units([], [(unit_id, unit)])?;
+        }
+        &Event::Undeploy(unit_id) => {
+            let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
+            unit.moved = true;
+            unit.deployed = true;
+            game.update_tiles_and_units([], [(unit_id, unit)])?;
+        }
+        &Event::Load(unit_id, carrier_id) => {
+            let (src_tile_id, mut src_tile) = game
+                .tiles
+                .get_unit_tile(unit_id)
+                .ok_or(ActionError::UnitNotOnMap)?;
+            let mut carrier = game
+                .units
+                .get(carrier_id)
+                .ok_or(ActionError::UnitNotFound)?;
+            src_tile.unit = None;
+            carrier.carried.push(unit_id);
+            game.update_tiles_and_units([(src_tile_id, src_tile)], [(carrier_id, carrier)])?;
+        }
+        &Event::Unload(carrier_id, unit_id, position) => {
+            let (dst_tile_id, mut dst_tile) = game.tiles.get_at(&position)?;
+            let mut carrier = game
+                .units
+                .get(carrier_id)
+                .ok_or(ActionError::UnitNotFound)?;
+            let carried_index = carrier
+                .carried
+                .iter()
+                .position(|uid| *uid == unit_id)
+                .ok_or(ActionError::CannotUnload)?;
+            dst_tile.unit = Some(unit_id);
+            carrier.carried.remove(carried_index);
+            carrier.moved = true;
+            game.update_tiles_and_units([(dst_tile_id, dst_tile)], [(carrier_id, carrier)])?;
+        }
+        &Event::Capture(unit_id, tile_id, capture_points) => {
+            let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
+            let (unit_tile_id, mut tile) = game
+                .tiles
+                .get_unit_tile(unit_id)
+                .ok_or(ActionError::UnitNotOnMap)?;
+            if unit_tile_id != tile_id {
+                return Err(ActionError::CannotCapture);
+            }
+            tile.capture_points = capture_points;
+            unit.moved = true;
+            game.update_tiles_and_units([(tile_id, tile)], [(unit_id, unit)])?;
+        }
+        &Event::Captured(unit_id, tile_id, player_number) => {
+            let mut unit = game.units.get(unit_id).ok_or(ActionError::UnitNotFound)?;
+            let mut tile = game.tiles.get(tile_id).ok_or(ActionError::TileNotFound)?;
+            unit.moved = true;
+            tile.owner = player_number;
+            game.update_tiles_and_units([(tile_id, tile)], [(unit_id, unit)])?;
+        }
+        &Event::Build(tile_id, unit_id, unit_type, price) => {
+            let mut tile = game.tiles.get(tile_id).ok_or(ActionError::TileNotFound)?;
+            let mut player = game
+                .in_turn_player()
+                .ok_or(ActionError::GameNotInProgress)?;
+            if player.funds < price {
+                return Err(ActionError::IntegrityError);
+            }
+            player.funds -= price;
+            let unit = Unit {
+                unit_type: unit_type,
+                moved: true,
+                owner: tile.owner,
+                ..Unit::default()
+            };
+            let new_unit_id = game.units.insert(unit);
+            if new_unit_id != unit_id {
+                return Err(ActionError::IntegrityError);
+            }
+            tile.unit = Some(unit_id);
+            game.players.update(player)?;
+            game.update_tiles_and_units([(tile_id, tile)], [])?;
+        }
+        &Event::TileCapturePointRegen(tile_id, capture_points) => {
+            let mut tile = game.tiles.get(tile_id).ok_or(ActionError::TileNotFound)?;
+            tile.capture_points = capture_points;
+            game.update_tiles_and_units([(tile_id, tile)], [])?;
+        }
+    };
+    Ok(())
+}
 pub fn start(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
     game.set_state(GameState::InProgress)
         .map_err(|_| ActionError::GameAlreadyStarted)?;
@@ -140,7 +333,9 @@ fn finish_turn(
     Ok(())
 }
 pub fn end_turn(game: &mut Game, emit: &mut dyn FnMut(Event)) -> ActionResult<()> {
-    let in_turn_number = game.in_turn_number().ok_or(ActionError::InternalError)?;
+    let in_turn_number = game
+        .in_turn_number()
+        .ok_or(ActionError::GameNotInProgress)?;
     finish_turn(game, in_turn_number, emit)?;
 
     // Update player alive statuses

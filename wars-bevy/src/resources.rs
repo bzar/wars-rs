@@ -1,8 +1,8 @@
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet, VecDeque};
-use wars::game::PlayerNumber;
+use wars::{game::PlayerNumber, protocol::GameId};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 pub enum Player {
     Human,
     Bot,
@@ -11,16 +11,31 @@ pub enum Player {
 #[derive(Resource)]
 pub enum Game {
     None,
-    PreGame(wars::game::Map, HashMap<PlayerNumber, Player>),
-    InGame(wars::game::Game, HashMap<PlayerNumber, Player>),
+    PreGame(
+        wars::game::Map,
+        HashMap<PlayerNumber, Player>,
+        Option<GameId>,
+    ),
+    InGame(
+        wars::game::Game,
+        HashMap<PlayerNumber, Player>,
+        Option<GameId>,
+    ),
 }
 
 impl Game {
     pub fn in_turn(&self) -> Option<&Player> {
-        let Game::InGame(state, players) = self else {
+        let Game::InGame(state, players, _) = self else {
             return None;
         };
         state.in_turn_number().and_then(|n| players.get(&n))
+    }
+    pub fn is_remote(&self) -> bool {
+        match self {
+            Game::None => false,
+            Game::PreGame(_, _, game_id) => game_id.is_some(),
+            Game::InGame(_, _, game_id) => game_id.is_some(),
+        }
     }
 }
 

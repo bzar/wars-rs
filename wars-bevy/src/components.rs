@@ -158,6 +158,9 @@ pub enum InputEvent {
 #[derive(Event)]
 pub struct GameEvent(pub wars::game::Event);
 
+#[derive(Event)]
+pub struct GameAction(pub wars::game::Action);
+
 #[derive(Component)]
 pub struct ActionMenu;
 

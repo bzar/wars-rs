@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-
 use crate::{
     AppState,
-    bevy_nfws::{NfwsEvent, NfwsHandle},
     connection::{Connection, ConnectionEvent},
     resources::{Game, Player},
 };
@@ -258,6 +255,7 @@ fn host_pregame_menu_system(
             HostPregameState::PreparingGame(game_id, game, players),
             Some(ConnectionEvent::GameStarted(event_game_id)),
         ) => {
+            // TODO: Game should be started here?
             if event_game_id == *game_id {
                 *game_state = Game::InGame(
                     game.clone(),
@@ -272,6 +270,7 @@ fn host_pregame_menu_system(
                             },
                         )
                         .collect(),
+                    Some(*game_id),
                 );
                 next_state.set(AppState::InGame);
             }
@@ -414,6 +413,7 @@ fn setup_local_menu_system(
                             PlayerType::None => None,
                         })
                         .collect(),
+                    None,
                 );
 
                 next_state.set(AppState::LoadGame);
