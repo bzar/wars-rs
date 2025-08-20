@@ -255,7 +255,7 @@ fn host_pregame_menu_system(
             HostPregameState::PreparingGame(game_id, game, players),
             Some(ConnectionEvent::GameStarted(event_game_id)),
         ) => {
-            // TODO: Game should be started here?
+            game.state = wars::game::GameState::InProgress;
             if event_game_id == *game_id {
                 *game_state = Game::InGame(
                     game.clone(),

@@ -185,7 +185,7 @@ fn visualizer_system(
     };
     while visualizer.state.is_none() && !visualizer.queue.is_empty() {
         if let Some(event) = visualizer.queue.pop_front() {
-            info!("Game event: {event:?}");
+            info!("Visualizing event: {event:?}");
             use wars::game::Event;
             visualizer.state = match event {
                 Event::StartTurn(player_number) => {
@@ -683,6 +683,7 @@ fn remote_game_system(
             crate::connection::ConnectionEvent::GameEvent(event_game_id, game_event) => {
                 info!("GameEvent: {event_game_id}: {game_event:?}");
                 if *game_id != event_game_id {
+                    info!("This event is not for this game");
                     continue;
                 }
                 wars::game::action::process(game, &game_event).expect("Error processing event");

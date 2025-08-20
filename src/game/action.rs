@@ -1,5 +1,3 @@
-use std::ops::Index;
-
 use crate::game::*;
 use crate::model::*;
 
@@ -25,8 +23,41 @@ pub fn perform(game: &mut Game, action: Action, emit: &mut dyn FnMut(Event)) -> 
 
 pub fn process(game: &mut Game, event: &Event) -> ActionResult<()> {
     match event {
-        &Event::StartTurn(player_number) => game.set_player_in_turn(player_number)?,
-        &Event::EndTurn(_player_number) => (),
+        &Event::StartTurn(player_number) => {
+            game.set_player_in_turn(player_number)?;
+            game.units
+                .owned_by_player(player_number)
+                .filter(|(_, unit)| unit.capturing)
+                .map(|(unit_id, unit)| {
+                    (
+                        unit_id,
+                        Unit {
+                            capturing: false,
+                            ..unit.clone()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .try_for_each(|(unit_id, unit)| game.units.update(unit_id, unit))?;
+        }
+        &Event::EndTurn(_player_number) => {
+            game.units
+                .iter_with_ids()
+                .filter(|(_, u)| u.moved)
+                .map(|(i, u)| {
+                    (
+                        *i,
+                        Unit {
+                            moved: false,
+                            ..u.clone()
+                        },
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .try_for_each(|(unit_id, unit)| game.units.update(unit_id, unit))?;
+        }
         &Event::Funds(player_number, amount) => {
             let mut player = game
                 .get_player(player_number)
@@ -85,7 +116,11 @@ pub fn process(game: &mut Game, event: &Event) -> ActionResult<()> {
                 .get_at(path.last().ok_or(ActionError::InvalidPath)?)?;
 
             src_tile.unit = None;
-            dst_tile.unit = Some(unit_id);
+
+            // Don't overwrite unit when loading into a carrier
+            if dst_tile.unit.is_none() {
+                dst_tile.unit = Some(unit_id);
+            }
 
             game.update_tiles_and_units([(src_tile_id, src_tile), (dst_tile_id, dst_tile)], [])?;
         }
@@ -135,17 +170,12 @@ pub fn process(game: &mut Game, event: &Event) -> ActionResult<()> {
             game.update_tiles_and_units([], [(unit_id, unit)])?;
         }
         &Event::Load(unit_id, carrier_id) => {
-            let (src_tile_id, mut src_tile) = game
-                .tiles
-                .get_unit_tile(unit_id)
-                .ok_or(ActionError::UnitNotOnMap)?;
             let mut carrier = game
                 .units
                 .get(carrier_id)
                 .ok_or(ActionError::UnitNotFound)?;
-            src_tile.unit = None;
             carrier.carried.push(unit_id);
-            game.update_tiles_and_units([(src_tile_id, src_tile)], [(carrier_id, carrier)])?;
+            game.update_tiles_and_units([], [(carrier_id, carrier)])?;
         }
         &Event::Unload(carrier_id, unit_id, position) => {
             let (dst_tile_id, mut dst_tile) = game.tiles.get_at(&position)?;
