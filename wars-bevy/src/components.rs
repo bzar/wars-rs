@@ -153,6 +153,8 @@ pub enum InputEvent {
     UnloadUnit(wars::game::UnitId),
     BuildUnit(wars::game::UnitType),
     EndTurn,
+    WaitForEvents,
+    ReceivedEvents,
 }
 
 #[derive(Event)]

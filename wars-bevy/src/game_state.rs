@@ -433,7 +433,7 @@ fn interaction_event_system(
     };
     let (mut visible_action_menu, mut visible_build_menu, mut visible_unload_menu) = menus;
 
-    let mut interaction_event_handler = |event, mut game: &mut wars::game::Game| {
+    let mut interaction_event_handler = |event, game: &mut wars::game::Game| {
         info!("Interaction event: {event:?}");
         match event {
             InteractionEvent::SelectUnitOrBase(_units, _tiles) => {
@@ -637,6 +637,7 @@ fn action_dispatch_system(
     mut next_state: ResMut<NextState<AppState>>,
     mut connection: Single<&mut Connection>,
     mut game: ResMut<Game>,
+    mut input_events: EventWriter<InputEvent>,
     mut game_actions: EventReader<GameAction>,
     mut game_events: EventWriter<GameEvent>,
 ) {
@@ -653,6 +654,7 @@ fn action_dispatch_system(
                 *game_id,
                 action.clone(),
             ));
+            input_events.write(InputEvent::WaitForEvents);
         } else {
             // Local game
             wars::game::action::perform(game, action.clone(), &mut |event| {
@@ -667,6 +669,7 @@ fn remote_game_system(
     mut connection: Single<&mut Connection>,
     mut game: ResMut<Game>,
     mut game_events: EventWriter<GameEvent>,
+    mut input_events: EventWriter<InputEvent>,
 ) {
     let Game::InGame(game, _players, game_id) = game.as_mut() else {
         error!("Not in game!");
@@ -678,6 +681,8 @@ fn remote_game_system(
         // Local game
         return;
     };
+    let mut handled_events = false;
+
     for event in connection.recv_all() {
         match event {
             crate::connection::ConnectionEvent::GameEvent(event_game_id, game_event) => {
@@ -688,6 +693,7 @@ fn remote_game_system(
                 }
                 wars::game::action::process(game, &game_event).expect("Error processing event");
                 game_events.write(GameEvent(game_event));
+                handled_events = true;
             }
             crate::connection::ConnectionEvent::GameActionError(event_game_id, action_error) => {
                 if *game_id != event_game_id {
@@ -700,5 +706,9 @@ fn remote_game_system(
             }
             _ => (),
         }
+    }
+
+    if handled_events {
+        input_events.write(InputEvent::ReceivedEvents);
     }
 }

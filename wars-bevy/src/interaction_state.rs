@@ -7,8 +7,8 @@ use wars::{
 };
 
 use crate::{
-    components::{Action, InputEvent},
     AppState,
+    components::{Action, InputEvent},
 };
 
 pub struct InteractionStatePlugin;
@@ -23,6 +23,7 @@ impl Plugin for InteractionStatePlugin {
 #[derive(Resource)]
 pub enum InteractionState {
     None,
+    Suspended,
     SelectUnitOrBase(HashSet<UnitId>, HashSet<TileId>),
     SelectDestination {
         unit_id: UnitId,
@@ -129,8 +130,17 @@ impl InteractionState {
                 self.select_unit_type_to_build(game, unit_type, emit)
             }
             InputEvent::EndTurn => self.end_turn(game, emit),
+            InputEvent::WaitForEvents => {
+                *self = Self::Suspended;
+                Ok(())
+            }
+            InputEvent::ReceivedEvents => {
+                *self = InteractionState::reset(game, emit);
+                Ok(())
+            }
         }
     }
+
     pub fn select_tile(
         &mut self,
         game: &mut Game,
@@ -178,6 +188,7 @@ impl InteractionState {
                 InteractionState::reset(game, emit)
             }
             InteractionState::None => return Err(Error::InvalidState),
+            other @ _ => other,
         };
         Ok(())
     }
